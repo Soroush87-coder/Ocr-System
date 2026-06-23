@@ -413,17 +413,25 @@ function cleanMrzLine(line){
 }
 // turn raw OCR text into candidate MRZ lines
 function findMrz(text){
-  const lines = text.split(/\r?\n/).map(cleanMrzLine).filter(Boolean);
+  const baseLines = text.split(/\r?\n/).map(cleanMrzLine).filter(Boolean);
+  const lines = [];
+  for (const line of baseLines){
+    lines.push(line);
+    const nameStart = line.search(/(?:P<[A-Z]{3}|PN[A-Z]{3})[A-Z<]{3,}/);
+    if (nameStart > 0) lines.push(line.slice(nameStart));
+    const dataStart = line.search(/[A-Z0-9<]{8,10}[0-9OISBZ][A-Z]{3}[0-9OISBZ]{6}/);
+    if (dataStart > 0) lines.push(line.slice(dataStart));
+  }
   // a line looks like MRZ if it's pure MRZ charset and is mostly digits or has fillers
   const mrzish = lines.filter(l=>{
     if(!/^[A-Z0-9<]+$/.test(l)) return false;
     const len=l.length;
-    const inWin = (len>=30&&len<=48) || (len>=24&&len<=34);
+    const inWin = (len>=30&&len<=60) || (len>=24&&len<=34);
     const digits=(l.match(/\d/g)||[]).length;
     return inWin && (l.includes('<') || digits>=5);
   });
 
-  const l44 = mrzish.filter(l=>l.length>=30&&l.length<=48);
+  const l44 = mrzish.filter(l=>l.length>=30&&l.length<=60);
   const l30 = mrzish.filter(l=>l.length>=24&&l.length<=34);
 
   // --- TD3 (passport / visa): 2 lines of 44 ---
@@ -499,7 +507,7 @@ function isLikelyTD3NameLine(line){
 function isFiller(t){
   if (!t) return true;
   if (/^(.)\1{3,}$/.test(t)) return true;          // 4+ identical chars
-  if (/^[LKC<]{4,}$/.test(t)) return true;         // run of typical '<' misreads
+  if (/^[LKC<]{2,}$/.test(t)) return true;         // run of typical '<' misreads
   const c = {}; for (const ch of t) c[ch]=(c[ch]||0)+1;
   const max = Math.max.apply(null, Object.values(c));
   if (t.length>=5 && max/t.length > 0.7) return true; // mostly one repeated letter
@@ -539,10 +547,13 @@ function cleanFieldValue(s){
 }
 function normalizeDate(s){
   s = fixDigits(String(s || '').replace(/[^\d.\-\/]/g, ''));
-  if (/^\d{8,9}$/.test(s)){
-    const compact = s.length === 9 ? s.slice(0,4) + s.slice(-4) : s;
-    const dd = compact.slice(0,2), mm = compact.slice(2,4), yyyy = compact.slice(4,8);
-    if (+dd >= 1 && +dd <= 31 && +mm >= 1 && +mm <= 12) return `${dd}/${mm}/${yyyy}`;
+  if (/^\d{8,10}$/.test(s)){
+    const dd = s.slice(0,2), yyyy = s.slice(-4), middle = s.slice(2,-4);
+    const monthCandidates = middle.length >= 4 ? [middle.slice(1,3), middle.slice(0,2), middle.slice(-2)] : [middle.slice(0,2), middle.slice(-2)];
+    for (let i=0;i<middle.length-1;i++) monthCandidates.push(middle.slice(i,i+2));
+    for (const mm of monthCandidates){
+      if (+dd >= 1 && +dd <= 31 && +mm >= 1 && +mm <= 12 && /^(19|20)\d{2}$/.test(yyyy)) return `${dd}/${mm.padStart(2,'0')}/${yyyy}`;
+    }
   }
   const m = s.match(/^(\d{1,4})[.\-\/](\d{1,2})[.\-\/](\d{2,4})$/);
   if (!m) return cleanFieldValue(s);
@@ -554,7 +565,9 @@ function normalizeDate(s){
 function extractNoisyIssueDate(text){
   const normalized = fixDigits(text).toUpperCase();
   const patterns = [
-    /\bD[O0][I1L]\s*[:\-]?\s*([0-9]{8,9})\b/g,
+    /\bD[O0][I1L]\s*[:\-]?\s*([0-9]{8,10})\b/g,
+    /\b([0-9]{8,10})\s+GDGS\b/g,
+    /\bH[O0]09\s+([0-9]{8,10})\b/g,
     /\bDATE\s*OF\s*[I1L|]SSUE\s*[:\-]?\s*([0-9]{1,2}[\/.\-][0-9]{1,2}[\/.\-][0-9]{2,4})/g,
     /\bISSUE\s*DATE\s*[:\-]?\s*([0-9]{1,2}[\/.\-][0-9]{1,2}[\/.\-][0-9]{2,4})/g
   ];
@@ -574,30 +587,63 @@ function extractNoisyPlaceOfBirth(text){
   }
   const m = scope.match(/P[O0]B\s+[A-Z0-9\s]{0,35}([A-Z]{4,20})\b/);
   if (m && !/^(POB|DATE|BIRTH|SEX|DOE|DOI|DOL)$/.test(m[1])) return m[1].replace(/^S(?=TEHRAN$)/,'');
+  const printed = normalized.match(/PLACE\s+OF\s+BIRTH\s+([A-Z ]{3,40}?)(?:\s+\d{6,10}|\s+ISSUANCE|\s+ISSUE|\s+EXPIRY|\s+DATE|\s+P<|$)/);
+  if (printed) return cleanFieldValue(printed[1]);
   return '';
+}
+function cleanPlaceOfBirthValue(value){
+  return cleanFieldValue(String(value || '')
+    .replace(/\b\d{6,10}\b[\s\S]*$/,'')
+    .replace(/\b(?:ISSUANCE|ISSUE|EXPIRY|DATE|SEX|AUTHORITY|GDGS|PASSPORT|FATHER|MOTHER|NATIONAL)\b[\s\S]*$/i,'')
+    .replace(/\bP<[\s\S]*$/,''));
 }
 function findFirst(re, text){
   const m = String(text || '').match(re);
   return m ? cleanFieldValue(m[1]) : '';
 }
 function extractVisaDates(text){
-  const dates = [...String(text || '').matchAll(/\b(20\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\b/g)].map(m => normalizeDate(m[1]));
+  const source = String(text || '');
+  const dates = [
+    ...[...source.matchAll(/\b(20\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\b/g)].map(m => normalizeDate(m[1])),
+    ...[...source.matchAll(/\b(\d{1,2}[\/.\-]\d{1,2}[\/.\-]20\d{2})\b/g)].map(m => normalizeDate(m[1])),
+    ...[...fixDigits(source).matchAll(/\b(\d{8,9})\b/g)].map(m => normalizeDate(m[1])).filter(v => /^\d{2}\/\d{2}\/20\d{2}$/.test(v))
+  ];
   if (dates.length >= 2) return {expiry: dates[0], issue_date: dates[1]};
   return {};
 }
 function extractUaeFileNumber(text){
-  return findFirst(/\b(?:Dubai|DXB|Abu\s*Dhabi|Sharjah|Ajman)?\s*([0-9]{3}\/[0-9]{4}\/[0-9]{5,10})\b/i, text);
+  return findFirst(/\b(?:Dubai|DXB|Abu\s*Dhabi|Sharjah|Ajman)?\s*([0-9]{3}\/[0-9]{4}(?:\/[0-9]{1,10}){1,2})\b/i, text);
 }
 function extractUidNumber(text){
-  return findFirst(/\b(U[0-9]{6,12}|UID\s*[:\-]?\s*[0-9]{6,12})\b/i, text).replace(/^UID\s*[:\-]?\s*/i,'');
+  return findFirst(/\b(U[0-9]{6,12}|[A-Z][0-9]{6,12}|UID\s*[:\-]?\s*[0-9]{6,12})\b/i, text).replace(/^UID\s*[:\-]?\s*/i,'');
 }
 function extractVisaName(lines){
   const bad = /^(DUBAI|PROPERTY OWNER|SELF SPONSOR|PASSPORT|RESIDENCE|LONG|UAE|UNITED|ARAB|EMIRATES)$/i;
   return lines.find(l => /^[A-Z][A-Z .'’-]+ [A-Z][A-Z .'’-]+$/.test(l) && !bad.test(l)) || '';
 }
+function extractVisaNameFromText(text){
+  return findFirst(/\b[A-Z][0-9]{6,12}\s+([A-Z][A-Z ]{5,80}?)\s+(?:INVESTOR|PROPERTY OWNER|MANAGER|PARTNER|EMPLOYEE|BUSINESSMAN|HOUSEWIFE|STUDENT)\b/i, text);
+}
 function extractVisaOccupation(lines){
   const known = ['PROPERTY OWNER','INVESTOR','MANAGER','PARTNER','EMPLOYEE','BUSINESSMAN','HOUSEWIFE','STUDENT'];
-  return known.find(v => lines.includes(v)) || '';
+  return known.find(v => lines.some(line => line.includes(v))) || '';
+}
+function extractVisaCompany(lines){
+  const line = lines.find(l => /L\.?\s*L\.?\s*C|LLC|DESIGNING|FASHION|TRADING|GENERAL|SERVICES/.test(l));
+  if (!line) return '';
+  const company = (line.match(/([A-Z][A-Z\s.&'-]*?(?:L\.?\s*L\.?\s*C|LLC))/) || line.match(/([A-Z]{4,}(?:DESIGNING|FASHION|TRADING|GENERAL|SERVICES)[A-Z]*LLC)/) || [null,line])[1];
+  return cleanFieldValue(company)
+    .replace(/\s+/g, ' ')
+    .replace(/L\s*L\s*C$/i, 'L.L.C')
+    .replace(/LLC$/i, ' L.L.C');
+}
+function extractVisaCompanyFromText(text){
+  const value = findFirst(/\b(?:INVESTOR(?:\s*\([^)]+\)|FEMALE)?|PROPERTY OWNER|MANAGER|PARTNER|EMPLOYEE|BUSINESSMAN|HOUSEWIFE|STUDENT)\s+([A-Z][A-Z .:&'-]*?(?:L\.?\s*L\.?\s*[:.]?\s*C|LLC))\b/i, text);
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/L\.?\s*L\.?\s*[:.]?\s*C$/i, 'L.L.C')
+    .replace(/L\s*L\s*C$/i, 'L.L.C')
+    .replace(/LLC$/i, ' L.L.C');
 }
 
 // TD3 line 2: anchor on nationality(3 letters)+dob+sex+expiry so a dropped/extra OCR char doesn't shift everything
@@ -605,13 +651,26 @@ function parseTD3Line2(b){
   const out = {};
   b = norm(cleanMrzLine(b), 44);
   const numberRaw = b.slice(0,9);
-  const birthRaw = fixDigits(b.slice(13,19));
-  const expiryRaw = fixDigits(b.slice(21,27));
-  out.number = isMrzCheckOk(numberRaw, b[9]) ? numberRaw.replace(/</g,'').replace(/[^A-Z0-9]/g,'') : '';
-  out.nationality = /^[A-Z]{3}$/.test(b.slice(10,13)) ? ctry(b.slice(10,13)) : '';
-  out.dob = validMrzDate(birthRaw) && isMrzCheckOk(birthRaw, b[19]) ? ymd(birthRaw, false) : '';
-  out.sex = sex(b[20]==='<'?'':b[20]);
-  out.expiry = validMrzDate(expiryRaw) && isMrzCheckOk(expiryRaw, b[27]) ? ymd(expiryRaw, true) : '';
+  const numberFixed = numberRaw[0] + fixDigits(numberRaw.slice(1));
+  const numberOk = isMrzCheckOk(numberRaw, b[9]) ? numberRaw : (isMrzCheckOk(numberFixed, b[9]) ? numberFixed : '');
+  out.number = numberOk ? numberOk.replace(/</g,'').replace(/[^A-Z0-9]/g,'') : '';
+
+  const anchor = b.match(/([A-Z]{3})([0-9OISBZ]{6})([0-9OISBZ])([MFX<])([0-9OISBZ]{6})([0-9OISBZ])/);
+  if (anchor){
+    const birthRaw = fixDigits(anchor[2]);
+    const expiryRaw = fixDigits(anchor[5]);
+    out.nationality = ctry(anchor[1]);
+    out.dob = validMrzDate(birthRaw) && isMrzCheckOk(birthRaw, anchor[3]) ? ymd(birthRaw, false) : '';
+    out.sex = sex(anchor[4]==='<'?'':anchor[4]);
+    out.expiry = validMrzDate(expiryRaw) && isMrzCheckOk(expiryRaw, anchor[6]) ? ymd(expiryRaw, true) : '';
+  } else {
+    const birthRaw = fixDigits(b.slice(13,19));
+    const expiryRaw = fixDigits(b.slice(21,27));
+    out.nationality = /^[A-Z]{3}$/.test(b.slice(10,13)) ? ctry(b.slice(10,13)) : '';
+    out.dob = validMrzDate(birthRaw) && isMrzCheckOk(birthRaw, b[19]) ? ymd(birthRaw, false) : '';
+    out.sex = sex(b[20]==='<'?'':b[20]);
+    out.expiry = validMrzDate(expiryRaw) && isMrzCheckOk(expiryRaw, b[27]) ? ymd(expiryRaw, true) : '';
+  }
   out.valid = Boolean(out.number && out.dob && out.expiry);
   return out;
 }
@@ -695,6 +754,7 @@ function parseLabeled(text){
   const birthCombo = lines.map(l => l.match(birthComboRe)).find(Boolean);
   f.place_of_birth = birthCombo ? tidyText(birthCombo[2]) : findLabel(['Place\\s*of\\s*Birth','Birth\\s*Place','Country\\s*of\\s*Birth','POB'], textValue);
   if (!f.place_of_birth) f.place_of_birth = extractNoisyPlaceOfBirth(text);
+  if (f.place_of_birth) f.place_of_birth = cleanPlaceOfBirthValue(f.place_of_birth);
   f.passport    = findLabel(['Passport\\s*(?:No\\.?|No|N|Number)?','Passport\\s*N[°º.]?','Document\\s*(?:No\\.?|Number)'], '[A-Z0-9]*\\d[A-Z0-9]{5,11}');
   f.card_number = findLabel(['ID\\s*(?:No\\.?|Number)','Identity\\s*(?:No\\.?|Number)','Card\\s*(?:No\\.?|Number)'], '[0-9\\- ]{10,25}');
   f.sex         = findLabel(['Sex','Gender'], '\\b[MF]\\b');
@@ -706,9 +766,10 @@ function parseLabeled(text){
   const visaDates = extractVisaDates(text);
   if (!f.expiry && visaDates.expiry) f.expiry = visaDates.expiry;
   if (!f.issue_date && visaDates.issue_date) f.issue_date = visaDates.issue_date;
-  if (!f.name && /ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|PROPERTY OWNER|SELF SPONSOR/i.test(text)) f.name = extractVisaName(upperLines);
+  if (!f.name && /ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|PROPERTY OWNER|SELF SPONSOR|INVESTOR/i.test(text)) f.name = extractVisaName(upperLines) || extractVisaNameFromText(text);
   if (!f.occupation && /ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|PROPERTY OWNER|SELF SPONSOR/i.test(text)) f.occupation = extractVisaOccupation(upperLines);
   if (!f.company_name && /SELF\s*SPONSOR/i.test(text)) f.company_name = 'Self Sponsor';
+  if (!f.company_name && /ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|INVESTOR|LLC|L\.L\.C/i.test(text)) f.company_name = extractVisaCompanyFromText(text) || extractVisaCompany(upperLines);
   return f;
 }
 
