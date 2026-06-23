@@ -506,8 +506,9 @@ function buildTextOutput(fileName, fields, mrz, raw){
     t += `${lab}: ${v && String(v).trim() ? v : '— یافت نشد —'}\n`;
   });
   extra.forEach(([k,lab])=>{ t += `${lab}: ${fields[k]}\n`; });
+  const hasAny = core.some(([k])=>fields[k] && String(fields[k]).trim()) || extra.length>0;
   if (mrz){ t += `\nMRZ\n${'-'.repeat(40)}\n${mrz.lines.join('\n')}\n`; }
-  t += `\nمتن کامل OCR\n${'-'.repeat(40)}\n${raw}\n`;
+  if (!hasAny){ t += `\nمتن کامل OCR\n${'-'.repeat(40)}\n${raw}\n`; }
   return t;
 }
 
@@ -544,15 +545,15 @@ function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
      <div class="preview-zone" id="pv"></div>
      ${rows}
      ${mrz?`<div class="block"><h4>MRZ — ناحیه ماشین‌خوان</h4><div class="mrz">${esc(mrz.lines.join('\n'))}</div></div>`:''}
-     <div class="block">
+     ${hasAny?'':`<div class="block">
        <details class="raw"><summary>متن کامل OCR</summary>
          <textarea class="rawtext" readonly>${esc(raw)}</textarea>
        </details>
-     </div>
+     </div>`}
      <div class="actions">
        <button class="btn primary" data-act="copy">کپی اطلاعات</button>
        <button class="btn" data-act="download">دانلود فایل متنی</button>
-       <button class="btn" data-act="copyraw">کپی متن خام</button>
+       ${hasAny?'':`<button class="btn" data-act="copyraw">کپی متن خام</button>`}
      </div>`;
 
   // attach the preview canvas (downscaled for display)
@@ -561,7 +562,8 @@ function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
   pv.appendChild(previewCanvas);
 
   card.querySelector('[data-act="copy"]').onclick = ()=>{ navigator.clipboard.writeText(txt); toast('اطلاعات کپی شد'); };
-  card.querySelector('[data-act="copyraw"]').onclick = ()=>{ navigator.clipboard.writeText(raw); toast('متن خام کپی شد'); };
+  const cr = card.querySelector('[data-act="copyraw"]');
+  if (cr) cr.onclick = ()=>{ navigator.clipboard.writeText(raw); toast('متن خام کپی شد'); };
   card.querySelector('[data-act="download"]').onclick = ()=>{
     const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
     const a = document.createElement('a');
