@@ -388,15 +388,22 @@ async function loadPdfFile(file){
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:buf}).promise;
   const canvases = [];
+  const textChunks = [];
   const pages = Math.min(pdf.numPages, 5); // cap to keep it fast
   for (let i=1;i<=pages;i++){
     const page = await pdf.getPage(i);
+    try{
+      const tc = await page.getTextContent();
+      const pageText = tc.items.map(item => item.str || '').join('\n').trim();
+      if (pageText) textChunks.push(pageText);
+    }catch(e){}
     const vp = page.getViewport({scale:2.0});
     const c = document.createElement('canvas');
     c.width = vp.width; c.height = vp.height;
     await page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
     canvases.push(prepCanvas(c, c.width, c.height));
   }
+  canvases.pdfText = textChunks.join('\n');
   return canvases;
 }
 
@@ -520,7 +527,7 @@ function ymd(s, future){
   let cc = future ? 2000 : (yy>cur?1900:2000);
   return `${dd}/${mm}/${cc+yy}`;
 }
-const COUNTRY = {ARE:'امارات',IRN:'ایران',IRQ:'عراق',TUR:'ترکیه',SAU:'عربستان',QAT:'قطر',KWT:'کویت',OMN:'عمان',BHR:'بحرین',AFG:'افغانستان',PAK:'پاکستان',IND:'هند',GBR:'بریتانیا',USA:'آمریکا',CAN:'کانادا',DEU:'آلمان',FRA:'فرانسه',ESP:'اسپانیا',ITA:'ایتالیا',NLD:'هلند'};
+const COUNTRY = {ARE:'امارات',IRN:'ایران',LBN:'لبنان',SYR:'سوریه',IRQ:'عراق',TUR:'ترکیه',SAU:'عربستان',QAT:'قطر',KWT:'کویت',OMN:'عمان',BHR:'بحرین',AFG:'افغانستان',PAK:'پاکستان',IND:'هند',GBR:'بریتانیا',USA:'آمریکا',CAN:'کانادا',DEU:'آلمان',FRA:'فرانسه',ESP:'اسپانیا',ITA:'ایتالیا',NLD:'هلند'};
 function ctry(c){ c=c.replace(/</g,''); return COUNTRY[c] ? `${c} (${COUNTRY[c]})` : (c||''); }
 function sex(c){ return c==='M'?'مرد (M)':c==='F'?'زن (F)':''; }
 function cleanFieldValue(s){
@@ -558,16 +565,39 @@ function extractNoisyIssueDate(text){
   return '';
 }
 function extractNoisyPlaceOfBirth(text){
-  const cityWords = ['TEHRAN','DUBAI','SHIRAZ','ISFAHAN','ESFAHAN','MASHHAD','TABRIZ','KARAJ','QOM','YAZD','RASHT','AHVAZ','KERMAN','KISH'];
+  const cityWords = ['TEHRAN','DUBAI','BEYROUTH','BEIRUT','SIN EL FIL','LATAKIA','HOMS','SHIRAZ','ISFAHAN','ESFAHAN','MASHHAD','TABRIZ','KARAJ','QOM','YAZD','RASHT','AHVAZ','KERMAN','KISH'];
   const normalized = text.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ');
   const pobIndex = normalized.search(/\bP[O0]B\b|PLACE\s+OF\s+BIRTH/);
   const scope = pobIndex >= 0 ? normalized.slice(pobIndex, pobIndex + 90) : normalized;
   for (const city of cityWords){
-    if (new RegExp(`S?${city}C?\\b`).test(scope)) return city === 'ESFAHAN' ? 'ISFAHAN' : city;
+    if (new RegExp(`S?${city.replace(/\s+/g,'\\s+')}C?\\b`).test(scope)) return city === 'ESFAHAN' || city === 'BEYROUTH' ? (city === 'ESFAHAN' ? 'ISFAHAN' : 'BEIRUT') : city;
   }
   const m = scope.match(/P[O0]B\s+[A-Z0-9\s]{0,35}([A-Z]{4,20})\b/);
   if (m && !/^(POB|DATE|BIRTH|SEX|DOE|DOI|DOL)$/.test(m[1])) return m[1].replace(/^S(?=TEHRAN$)/,'');
   return '';
+}
+function findFirst(re, text){
+  const m = String(text || '').match(re);
+  return m ? cleanFieldValue(m[1]) : '';
+}
+function extractVisaDates(text){
+  const dates = [...String(text || '').matchAll(/\b(20\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\b/g)].map(m => normalizeDate(m[1]));
+  if (dates.length >= 2) return {expiry: dates[0], issue_date: dates[1]};
+  return {};
+}
+function extractUaeFileNumber(text){
+  return findFirst(/\b(?:Dubai|DXB|Abu\s*Dhabi|Sharjah|Ajman)?\s*([0-9]{3}\/[0-9]{4}\/[0-9]{5,10})\b/i, text);
+}
+function extractUidNumber(text){
+  return findFirst(/\b(U[0-9]{6,12}|UID\s*[:\-]?\s*[0-9]{6,12})\b/i, text).replace(/^UID\s*[:\-]?\s*/i,'');
+}
+function extractVisaName(lines){
+  const bad = /^(DUBAI|PROPERTY OWNER|SELF SPONSOR|PASSPORT|RESIDENCE|LONG|UAE|UNITED|ARAB|EMIRATES)$/i;
+  return lines.find(l => /^[A-Z][A-Z .'’-]+ [A-Z][A-Z .'’-]+$/.test(l) && !bad.test(l)) || '';
+}
+function extractVisaOccupation(lines){
+  const known = ['PROPERTY OWNER','INVESTOR','MANAGER','PARTNER','EMPLOYEE','BUSINESSMAN','HOUSEWIFE','STUDENT'];
+  return known.find(v => lines.includes(v)) || '';
 }
 
 // TD3 line 2: anchor on nationality(3 letters)+dob+sex+expiry so a dropped/extra OCR char doesn't shift everything
@@ -628,6 +658,7 @@ function parseLabeled(text){
   const lines = text.split(/\r?\n/)
     .map(l => cleanFieldValue(l))
     .filter(Boolean);
+  const upperLines = lines.map(l => l.toUpperCase());
   const flat = cleanFieldValue(text.replace(/\r?\n/g, ' | '));
   const textValue = '[A-Za-z][A-Za-z0-9 .,&()\'’\\-]{1,80}';
   const dateValue = '[0-9OISBZ]{1,4}[.\\-/][0-9OISBZ]{1,2}[.\\-/][0-9OISBZ]{2,4}';
@@ -658,22 +689,31 @@ function parseLabeled(text){
   f.given       = findLabel(['Given\\s*Names?','Given\\s*Name','Forename','First\\s*Name'], textValue);
   f.nationality = findLabel(['Nationality'], textValue);
   f.occupation  = findLabel(['Occupation','Profession','Job\\s*Title'], textValue);
-  f.company_name = findLabel(['Company\\s*Name','Employer','Sponsor','Place\\s*of\\s*Work','Work\\s*Place','Establishment'], textValue);
+  f.company_name = findLabel(['Company\\s*Name','Employer','Sponsor','Self\\s*Sponsor','Place\\s*of\\s*Work','Work\\s*Place','Establishment'], textValue);
   f.issue_place = findLabel(['Issuing\\s*Place','Place\\s*of\\s*Issue','Authority'], textValue);
   const birthComboRe = new RegExp(`Date\\s*(?:&|and)\\s*Place\\s*of\\s*Birth\\s*[:;\\-/]?\\s*(${dateValue})\\s*[-–—]\\s*([A-Za-z][A-Za-z .'\\-]{1,40})`, 'i');
   const birthCombo = lines.map(l => l.match(birthComboRe)).find(Boolean);
   f.place_of_birth = birthCombo ? tidyText(birthCombo[2]) : findLabel(['Place\\s*of\\s*Birth','Birth\\s*Place','Country\\s*of\\s*Birth','POB'], textValue);
   if (!f.place_of_birth) f.place_of_birth = extractNoisyPlaceOfBirth(text);
-  f.passport    = findLabel(['Passport\\s*(?:No\\.?|Number)?','Document\\s*(?:No\\.?|Number)'], '[A-Z0-9]*\\d[A-Z0-9]{5,11}');
+  f.passport    = findLabel(['Passport\\s*(?:No\\.?|No|N|Number)?','Passport\\s*N[°º.]?','Document\\s*(?:No\\.?|Number)'], '[A-Z0-9]*\\d[A-Z0-9]{5,11}');
   f.card_number = findLabel(['ID\\s*(?:No\\.?|Number)','Identity\\s*(?:No\\.?|Number)','Card\\s*(?:No\\.?|Number)'], '[0-9\\- ]{10,25}');
   f.sex         = findLabel(['Sex','Gender'], '\\b[MF]\\b');
   f.dob         = birthCombo ? normalizeDate(birthCombo[1]) : findLabel(['Date\\s*of\\s*Birth','Birth\\s*Date','DOB'], dateValue, {date:true});
-  f.issue_date  = findLabel(['Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue','Date\\s*of\\s*[I1l|]ssue','Date\\s*of\\s*Issu[e3]'], dateValue, {date:true}) || extractNoisyIssueDate(text);
-  f.expiry      = findLabel(['Expiry\\s*Date','Expire\\s*Date','Expiration\\s*Date','Date\\s*of\\s*Expiry','Valid\\s*Until'], dateValue, {date:true});
+  f.issue_date  = findLabel(['Issuance\\s*Date','Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue','Date\\s*of\\s*[I1l|]ssue','Date\\s*of\\s*Issu[e3]'], dateValue, {date:true}) || extractNoisyIssueDate(text);
+  f.expiry      = findLabel(['Expiry\\s*Date','Expire\\s*Date','Expiration\\s*Date','Date\\s*of\\s*Expiry','Date\\s*of\\s*Expire','Valid\\s*Until'], dateValue, {date:true});
+  f.uid_number  = extractUidNumber(text);
+  f.file_number = extractUaeFileNumber(text);
+  const visaDates = extractVisaDates(text);
+  if (!f.expiry && visaDates.expiry) f.expiry = visaDates.expiry;
+  if (!f.issue_date && visaDates.issue_date) f.issue_date = visaDates.issue_date;
+  if (!f.name && /ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|PROPERTY OWNER|SELF SPONSOR/i.test(text)) f.name = extractVisaName(upperLines);
+  if (!f.occupation && /ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|PROPERTY OWNER|SELF SPONSOR/i.test(text)) f.occupation = extractVisaOccupation(upperLines);
+  if (!f.company_name && /SELF\s*SPONSOR/i.test(text)) f.company_name = 'Self Sponsor';
   return f;
 }
 
 function docTypeFromText(text){
+  if (/ﺇﻗﺎﻣﺔ|اقامة|RESIDENCE|LONG\s*TERM|PROPERTY OWNER|SELF SPONSOR|U[0-9]{6,12}|[0-9]{3}\/[0-9]{4}\/[0-9]{5,10}/i.test(text)) return 'ویزای اقامت امارات';
   if (/Emirates\s*ID|Emirates\s*Identity|Resident\s*Identity\s*Card|United\s*Arab\s*Emirates[\s\S]{0,80}Identity/i.test(text)) return 'امارات آیدی';
   if (/Resident Identity Card/i.test(text)) return 'کارت اقامت امارات (Resident ID)';
   if (/Golden\s*Residence|Golden\s*Visa/i.test(text)) return 'اقامت طلایی (Golden)';
@@ -689,13 +729,14 @@ function mergeFields(mrz, raw){
   const t = parseLabeled(raw);
   const f = {};
   const eid = findEid(raw);
-  f.doc_type    = (eid ? 'امارات آیدی' : '') || m.doc_type || docTypeFromText(raw) || '';
-  f.surname     = m.surname || t.surname || '';
+  const printedType = docTypeFromText(raw);
+  f.doc_type    = printedType || (eid ? 'امارات آیدی' : '') || m.doc_type || '';
+  f.surname     = m.surname || t.surname || (t.given && t.name ? t.name : '');
   f.given       = m.given   || t.given   || '';
   const mrzFull = [m.surname, m.given].filter(Boolean).join(' ');
   const labFull = [t.surname, t.given].filter(Boolean).join(' ') || t.name;
   f.full_name   = mrzFull || m.name_combined || labFull || '';
-  f.name        = f.given || t.name || '';
+  f.name        = f.given || (!t.given ? t.name : '') || '';
   f.number      = m.number || t.passport || '';
   f.passport_number = f.number;
   f.nationality = m.nationality || t.nationality || '';
@@ -708,6 +749,8 @@ function mergeFields(mrz, raw){
   f.place_of_birth = t.place_of_birth || '';
   f.occupation  = t.occupation || '';
   f.company_name = t.company_name || '';
+  f.uid_number = t.uid_number || '';
+  f.file_number = t.file_number || '';
   f.emirates_id = eid || cleanFieldValue(t.card_number).replace(/\s+/g,'-');
   f.document_kind = detectDocumentKind(f, mrz, raw);
   return f;
@@ -715,6 +758,7 @@ function mergeFields(mrz, raw){
 
 /* ---------- rendering ---------- */
 function detectDocumentKind(fields, mrz, raw){
+  if (/ویزای اقامت|RESIDENCE|ﺇﻗﺎﻣﺔ|اقامة|PROPERTY OWNER|SELF SPONSOR|U[0-9]{6,12}|[0-9]{3}\/[0-9]{4}\/[0-9]{5,10}/i.test(fields.doc_type + ' ' + raw)) return 'uae_residence';
   if (fields.emirates_id || /Emirates\s*ID|Emirates\s*Identity|Resident\s*Identity\s*Card/i.test(raw)) return 'emirates_id';
   if (mrz && mrz.type === 'TD1' && /ARE/.test(mrz.lines.join(''))) return 'emirates_id';
   if (/پاسپورت/.test(fields.doc_type) || /PASSPORT/i.test(raw)) return 'passport';
@@ -737,6 +781,18 @@ const FIELD_SETS = {
     ['expiry','Expire date'],
     ['occupation','Occupation'],
     ['company_name','Company name'],
+  ],
+  uae_residence: [
+    ['doc_type','Document type'],
+    ['full_name','Full name'],
+    ['emirates_id','Emirates ID'],
+    ['uid_number','UID number'],
+    ['file_number','File number'],
+    ['passport_number','Passport number'],
+    ['issue_date','Issue date'],
+    ['expiry','Expire date'],
+    ['occupation','Occupation'],
+    ['company_name','Sponsor / company'],
   ],
   generic: [
     ['doc_type','نوع سند'],
@@ -891,7 +947,12 @@ async function processFile(file){
     const canvases = isPdf ? await loadPdfFile(file) : [await loadImageFile(file)];
 
     const w = await getWorker();
-    const raw = (await recognizeDocument(w, canvases)).replace(/[ \t]+\n/g,'\n').trim();
+    const ocrText = await recognizeDocument(w, canvases);
+    const raw = [canvases.pdfText || '', ocrText]
+      .filter(Boolean)
+      .join('\n\n')
+      .replace(/[ \t]+\n/g,'\n')
+      .trim();
 
     const mrz = findMrz(raw);
     const fields = mergeFields(mrz, raw);
