@@ -421,9 +421,19 @@ function findMrz(text){
 
   // --- TD3 (passport / visa): 2 lines of 44 ---
   if (l44.length>=2){
-    let line1 = l44.find(l=>l.includes('<<') || /^[PV]/.test(l)) || l44[0];
-    let line2 = l44.find(l=>l!==line1 && /\d{6}/.test(l)) || l44.find(l=>l!==line1) || l44[1];
-    return {type:'TD3', lines:[norm(line1,44), norm(line2,44)]};
+    let best = null;
+    for (const a of l44){
+      for (const b of l44){
+        if (a === b) continue;
+        const nameScore = isLikelyTD3NameLine(a) ? 5 : (/^[PV]/.test(a) && a.includes('<<') ? 3 : 0);
+        const line2Score = scoreTD3Line2(b);
+        const score = nameScore + line2Score;
+        if (!best || score > best.score) best = {line1:a, line2:b, score, line2Score};
+      }
+    }
+    if (best && best.score >= 7){
+      return {type:'TD3', lines:[norm(best.line1,44), norm(best.line2,44)], valid: best.line2Score >= 10};
+    }
   }
 
   // --- TD1 (ID card / Emirates ID): 3 lines of 30 ---
@@ -441,6 +451,43 @@ function findMrz(text){
 }
 function norm(l,n){ l=l.slice(0,n); while(l.length<n) l+='<'; return l; }
 function fixDigits(s){ return s.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2'); }
+function mrzValue(ch){
+  if (ch === '<') return 0;
+  if (/[0-9]/.test(ch)) return ch.charCodeAt(0) - 48;
+  if (/[A-Z]/.test(ch)) return ch.charCodeAt(0) - 55;
+  return 0;
+}
+function mrzCheck(s){
+  const weights = [7,3,1];
+  let sum = 0;
+  for (let i=0;i<s.length;i++) sum += mrzValue(s[i]) * weights[i % 3];
+  return String(sum % 10);
+}
+function isMrzCheckOk(value, check){
+  check = fixDigits(String(check || ''));
+  return /^[0-9]$/.test(check) && mrzCheck(value) === check;
+}
+function validMrzDate(s){
+  s = fixDigits(s);
+  if (!/^\d{6}$/.test(s)) return false;
+  const mm = +s.slice(2,4), dd = +s.slice(4,6);
+  return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+}
+function scoreTD3Line2(line){
+  line = norm(cleanMrzLine(line), 44);
+  let score = 0;
+  if (isMrzCheckOk(line.slice(0,9), line[9])) score += 4;
+  if (validMrzDate(line.slice(13,19))) score += 2;
+  if (isMrzCheckOk(line.slice(13,19), line[19])) score += 3;
+  if (/[MF<]/.test(line[20])) score += 1;
+  if (validMrzDate(line.slice(21,27))) score += 2;
+  if (isMrzCheckOk(line.slice(21,27), line[27])) score += 3;
+  if (/^[A-Z]{3}$/.test(line.slice(10,13))) score += 1;
+  return score;
+}
+function isLikelyTD3NameLine(line){
+  return /^[PV][A-Z<][A-Z]{3}/.test(line) && line.includes('<<');
+}
 // drop OCR-misread filler runs (MRZ pads names with '<', which OCR often reads as LLLL/KKKK)
 function isFiller(t){
   if (!t) return true;
@@ -496,20 +543,16 @@ function normalizeDate(s){
 // TD3 line 2: anchor on nationality(3 letters)+dob+sex+expiry so a dropped/extra OCR char doesn't shift everything
 function parseTD3Line2(b){
   const out = {};
-  const m = b.match(/([A-Z]{3})([0-9OISBZ]{6})[0-9OISBZ]([MFX<])([0-9OISBZ]{6})/);
-  if (m){
-    out.number = b.slice(0, 9).replace(/</g,'').replace(/[^A-Z0-9]/g,'');
-    out.nationality = ctry(m[1]);
-    out.dob = ymd(m[2], false);
-    out.sex = sex(m[3]==='<'?'':m[3]);
-    out.expiry = ymd(m[4], true);
-  } else {
-    out.number = b.slice(0,9).replace(/</g,'');
-    out.nationality = ctry(b.slice(10,13));
-    out.dob = ymd(b.slice(13,19), false);
-    out.sex = sex(b[20]);
-    out.expiry = ymd(b.slice(21,27), true);
-  }
+  b = norm(cleanMrzLine(b), 44);
+  const numberRaw = b.slice(0,9);
+  const birthRaw = fixDigits(b.slice(13,19));
+  const expiryRaw = fixDigits(b.slice(21,27));
+  out.number = isMrzCheckOk(numberRaw, b[9]) ? numberRaw.replace(/</g,'').replace(/[^A-Z0-9]/g,'') : '';
+  out.nationality = /^[A-Z]{3}$/.test(b.slice(10,13)) ? ctry(b.slice(10,13)) : '';
+  out.dob = validMrzDate(birthRaw) && isMrzCheckOk(birthRaw, b[19]) ? ymd(birthRaw, false) : '';
+  out.sex = sex(b[20]==='<'?'':b[20]);
+  out.expiry = validMrzDate(expiryRaw) && isMrzCheckOk(expiryRaw, b[27]) ? ymd(expiryRaw, true) : '';
+  out.valid = Boolean(out.number && out.dob && out.expiry);
   return out;
 }
 
@@ -541,10 +584,11 @@ function parseMrz(mrz){
 
 // Emirates ID number 784-YYYY-NNNNNNN-N anywhere in the text
 function findEid(text){
-  const digits = text.replace(/[^\d]/g,'');
-  const m = digits.match(/784\d{12}/);
+  const normalized = fixDigits(text).replace(/[^\d\s-]/g,' ');
+  const m = normalized.match(/784[\s-]*(19|20)\d{2}[\s-]*\d{7}[\s-]*\d/);
   if(!m) return '';
-  const d=m[0];
+  const d=m[0].replace(/[^\d]/g,'');
+  if (d.length !== 15) return '';
   return `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7,14)}-${d.slice(14)}`;
 }
 
@@ -772,9 +816,9 @@ function makeMrzCrops(canvas){
 async function recognizeDocument(w, canvases){
   const chunks = [];
   const normalParams = {
-    tessedit_pageseg_mode: '6',
+    tessedit_pageseg_mode: '11',
     preserve_interword_spaces: '1',
-    tessedit_char_whitelist: ''
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/.:,()&<> '
   };
   const mrzParams = {
     tessedit_pageseg_mode: '6',
