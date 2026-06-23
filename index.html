@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>سند‌خوان — Travel Market</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12203a;
+  --ink-soft:#41506b;
+  --paper:#e9edf2;
+  --surface:#ffffff;
+  --line:#d7deea;
+  --accent:#0d7a5f;
+  --accent-soft:#e3f3ec;
+  --stamp:#b4541f;
+  --danger:#b0413e;
+  --radius:16px;
+  --mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Vazirmatn', system-ui, sans-serif;
+  background:
+    radial-gradient(900px 500px at 100% -10%, #eaf4ef 0%, transparent 60%),
+    var(--paper);
+  color:var(--ink);
+  min-height:100dvh;
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:920px;margin:0 auto;padding:28px 18px 80px}
+
+header.top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.logo{
+  width:42px;height:42px;border-radius:12px;flex:none;
+  background:linear-gradient(135deg,var(--ink),#24406b);
+  display:grid;place-items:center;color:#fff;font-weight:900;font-size:20px;
+  box-shadow:0 6px 18px rgba(18,32,58,.18);
+}
+.top h1{font-size:20px;font-weight:900;margin:0;letter-spacing:-.2px}
+.top .sub{font-size:13px;color:var(--ink-soft);margin:0}
+
+.privacy{
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--accent-soft);color:var(--accent);
+  font-size:12.5px;font-weight:500;
+  padding:7px 12px;border-radius:999px;margin:14px 0 22px;
+}
+.privacy b{font-weight:700}
+
+/* drop zone */
+.drop{
+  position:relative;
+  background:var(--surface);
+  border:2px dashed var(--line);
+  border-radius:var(--radius);
+  padding:38px 22px;
+  text-align:center;
+  cursor:pointer;
+  transition:border-color .15s ease, background .15s ease, transform .05s ease;
+}
+.drop:hover{border-color:var(--accent)}
+.drop.drag{border-color:var(--accent);background:var(--accent-soft)}
+.drop .ic{font-size:34px;line-height:1}
+.drop .big{font-weight:700;margin:10px 0 2px;font-size:16px}
+.drop .small{color:var(--ink-soft);font-size:13px}
+.drop input{display:none}
+.formats{margin-top:14px;font-size:12px;color:var(--ink-soft)}
+.formats span{display:inline-block;background:var(--paper);border:1px solid var(--line);
+  border-radius:6px;padding:2px 8px;margin:0 2px;font-family:var(--mono);font-size:11px}
+
+.engine{margin:14px 2px 0;font-size:12px;color:var(--ink-soft);min-height:18px}
+
+/* result card */
+.card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  margin-top:20px;
+  overflow:hidden;
+  box-shadow:0 8px 24px rgba(18,32,58,.06);
+}
+.card-head{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 16px;border-bottom:1px solid var(--line);
+  background:linear-gradient(0deg,#fbfcfe,#fff);
+}
+.card-head .fname{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.badge{
+  flex:none;font-size:11.5px;font-weight:700;letter-spacing:.3px;
+  padding:4px 10px;border-radius:7px;
+  color:var(--stamp);background:#fbeee6;border:1px solid #f0d2bf;
+  text-transform:uppercase;font-family:var(--mono);
+}
+.badge.unknown{color:var(--ink-soft);background:var(--paper);border-color:var(--line)}
+
+/* preview + scan */
+.preview-zone{position:relative;background:#0d1626;max-height:360px;overflow:hidden;display:grid;place-items:center}
+.preview-zone img,.preview-zone canvas{max-width:100%;max-height:360px;display:block}
+.scanline{
+  position:absolute;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  box-shadow:0 0 18px 3px rgba(13,122,95,.6);
+  animation:scan 1.6s ease-in-out infinite;
+}
+@keyframes scan{0%{top:4%}50%{top:96%}100%{top:4%}}
+.proc{
+  padding:18px 16px;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--ink-soft);
+}
+.bar{flex:1;height:6px;background:var(--paper);border-radius:999px;overflow:hidden}
+.bar > i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .2s ease}
+
+/* fields table */
+.fields{padding:6px 16px 4px}
+.row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #eef1f6}
+.row:last-child{border-bottom:0}
+.row .k{flex:none;width:148px;color:var(--ink-soft);font-size:13px;font-weight:500}
+.row .v{flex:1;font-family:var(--mono);font-size:13.5px;font-weight:500;color:var(--ink);word-break:break-word}
+.row .v[dir="ltr"]{text-align:left}
+.row.miss .v{color:var(--danger);font-style:italic;font-family:'Vazirmatn',sans-serif}
+.no-mrz{padding:12px 16px;color:var(--ink-soft);font-size:13px}
+
+/* MRZ + raw blocks */
+.block{padding:14px 16px;border-top:1px solid var(--line)}
+.block h4{margin:0 0 8px;font-size:12.5px;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
+.mrz{
+  font-family:var(--mono);font-size:12.5px;letter-spacing:1px;
+  background:#0d1626;color:#cfe9df;border-radius:10px;padding:12px 14px;
+  white-space:pre;overflow-x:auto;direction:ltr;text-align:left;
+}
+details.raw summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink-soft);list-style:none}
+details.raw summary::-webkit-details-marker{display:none}
+details.raw summary::before{content:'▸ ';color:var(--accent)}
+details.raw[open] summary::before{content:'▾ '}
+textarea.rawtext{
+  width:100%;margin-top:10px;min-height:150px;resize:vertical;
+  font-family:var(--mono);font-size:12.5px;line-height:1.6;
+  background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:12px;
+  direction:ltr;text-align:left;color:var(--ink);
+}
+
+/* actions */
+.actions{display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-top:1px solid var(--line);background:#fbfcfe}
+button.btn{
+  font-family:inherit;font-weight:700;font-size:13.5px;cursor:pointer;
+  border-radius:10px;padding:10px 16px;border:1px solid var(--line);
+  background:#fff;color:var(--ink);transition:transform .05s ease, background .15s ease;
+}
+button.btn:active{transform:translateY(1px)}
+button.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.btn.primary:hover{background:#0a6650}
+button.btn:disabled{opacity:.5;cursor:default}
+.toast{
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:#fff;padding:11px 20px;border-radius:999px;font-size:13.5px;font-weight:500;
+  opacity:0;pointer-events:none;transition:.25s ease;z-index:50;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+footer{text-align:center;color:var(--ink-soft);font-size:12px;margin-top:34px}
+
+@media (max-width:560px){
+  .row{flex-direction:column;gap:2px}
+  .row .k{width:auto}
+}
+@media (prefers-reduced-motion:reduce){
+  .scanline{animation:none;top:50%}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">س</div>
+    <div>
+      <h1>سند‌خوان</h1>
+      <p class="sub">استخراج خودکار اطلاعات از پاسپورت، امارات آیدی و ویزا</p>
+    </div>
+  </header>
+
+  <div class="privacy">🔒 <span><b>کاملاً آفلاین:</b> پردازش داخل مرورگر شما انجام می‌شود؛ هیچ فایلی به سرور ارسال نمی‌شود.</span></div>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="image/*,.heic,.heif,.pdf,application/pdf" multiple>
+    <div class="ic">📄</div>
+    <div class="big">عکس یا PDF را اینجا رها کنید</div>
+    <div class="small">یا برای انتخاب فایل کلیک کنید — می‌توانید چند فایل را با هم اضافه کنید</div>
+    <div class="formats">
+      <span>JPG</span><span>PNG</span><span>PDF</span><span>HEIC</span><span>WEBP</span>
+    </div>
+  </label>
+  <div class="engine" id="engine"></div>
+
+  <div id="results"></div>
+
+  <footer>پردازش‌گر Tesseract OCR + تشخیص MRZ — ساخته‌شده برای Travel Market</footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<script>
+"use strict";
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+const $ = s => document.querySelector(s);
+const dropEl = $('#drop');
+const fileEl = $('#file');
+const resultsEl = $('#results');
+const engineEl = $('#engine');
+const toastEl = $('#toast');
+
+let worker = null;            // reused Tesseract worker
+let queue = Promise.resolve(); // process files one at a time
+
+/* ---------- helpers ---------- */
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>toastEl.classList.remove('show'), 1900);
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+
+async function getWorker(){
+  if (worker) return worker;
+  engineEl.textContent = 'در حال بارگذاری موتور OCR (بار اول کمی طول می‌کشد)…';
+  worker = await Tesseract.createWorker('eng', 1, {
+    logger: m => {
+      if (m.status === 'recognizing text' && currentBar){
+        currentBar.style.width = Math.round(m.progress*100) + '%';
+      }
+    }
+  });
+  engineEl.textContent = '';
+  return worker;
+}
+let currentBar = null;
+
+/* draw an image source onto a canvas, lightly cleaned up for OCR */
+function prepCanvas(source, w, h){
+  const MAX = 2200;
+  let scale = 1;
+  if (Math.max(w,h) > MAX) scale = MAX / Math.max(w,h);
+  const cw = Math.round(w*scale), ch = Math.round(h*scale);
+  const c = document.createElement('canvas');
+  c.width = cw; c.height = ch;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(source, 0, 0, cw, ch);
+  // grayscale + mild contrast — helps OCR on phone photos
+  try{
+    const img = ctx.getImageData(0,0,cw,ch);
+    const d = img.data, k = 1.25, m = 128*(1-k);
+    for (let i=0;i<d.length;i+=4){
+      let g = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+      g = g*k + m;
+      g = g<0?0:g>255?255:g;
+      d[i]=d[i+1]=d[i+2]=g;
+    }
+    ctx.putImageData(img,0,0);
+  }catch(e){/* tainted canvas etc. — keep original */}
+  return c;
+}
+
+async function fileToImageBlob(file){
+  const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+  if (isHeic){
+    if (!window.heic2any) throw new Error('تبدیل‌گر HEIC بارگذاری نشد — اینترنت را بررسی کنید');
+    const out = await heic2any({ blob:file, toType:'image/jpeg', quality:0.92 });
+    return Array.isArray(out) ? out[0] : out;
+  }
+  return file;
+}
+
+async function loadImageFile(file){
+  const blob = await fileToImageBlob(file);
+  // robust path: createImageBitmap handles EXIF orientation (iPhone photos)
+  if (window.createImageBitmap){
+    try{
+      let bmp;
+      try { bmp = await createImageBitmap(blob, {imageOrientation:'from-image'}); }
+      catch(_) { bmp = await createImageBitmap(blob); }
+      const c = prepCanvas(bmp, bmp.width, bmp.height);
+      if (bmp.close) bmp.close();
+      return c;
+    }catch(e){ /* fall back to Image() below */ }
+  }
+  return await new Promise((resolve,reject)=>{
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = ()=>{ URL.revokeObjectURL(url); resolve(prepCanvas(img, img.naturalWidth, img.naturalHeight)); };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('این فرمت عکس قابل خواندن نبود — لطفاً JPG یا PNG امتحان کنید')); };
+    img.src = url;
+  });
+}
+
+async function loadPdfFile(file){
+  if (!window.pdfjsLib) throw new Error('کتابخانه PDF بارگذاری نشد');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const canvases = [];
+  const pages = Math.min(pdf.numPages, 5); // cap to keep it fast
+  for (let i=1;i<=pages;i++){
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({scale:2.0});
+    const c = document.createElement('canvas');
+    c.width = vp.width; c.height = vp.height;
+    await page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+    canvases.push(prepCanvas(c, c.width, c.height));
+  }
+  return canvases;
+}
+
+/* ---------- MRZ parsing ---------- */
+function cleanMrzLine(line){
+  return line.toUpperCase().replace(/\s+/g,'').replace(/[«»|]/g,'<').replace(/[^A-Z0-9<]/g,'');
+}
+// turn raw OCR text into candidate MRZ lines
+function findMrz(text){
+  const raw = text.split(/\r?\n/).map(cleanMrzLine).filter(l=>l.length>=28);
+  // keep lines that look like MRZ (lots of A-Z0-9<, at least one <)
+  const cand = raw.filter(l => /</.test(l) && (l.match(/[A-Z0-9<]/g)||[]).length/l.length > 0.9);
+  // TD3 passport / visa: two lines ~44
+  const l44 = cand.filter(l => l.length>=40 && l.length<=46);
+  if (l44.length>=2) return {type:'TD3', lines:[norm(l44[0],44), norm(l44[1],44)]};
+  // TD1 id card: three lines ~30
+  const l30 = cand.filter(l => l.length>=28 && l.length<=33);
+  if (l30.length>=3) return {type:'TD1', lines:[norm(l30[0],30), norm(l30[1],30), norm(l30[2],30)]};
+  if (l44.length===1 && l30.length>=2) return {type:'TD1', lines:l30.slice(0,3).map(x=>norm(x,30))};
+  return null;
+}
+function norm(l,n){ l=l.slice(0,n); while(l.length<n) l+='<'; return l; }
+function fixDigits(s){ return s.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2'); }
+function names(field){
+  const p = field.split('<<');
+  const sur = (p[0]||'').replace(/</g,' ').trim();
+  const giv = (p.slice(1).join(' ')||'').replace(/</g,' ').replace(/\s+/g,' ').trim();
+  return {sur, giv};
+}
+function ymd(s, future){
+  s = fixDigits(s);
+  if(!/^\d{6}$/.test(s)) return s;
+  let yy=+s.slice(0,2), mm=s.slice(2,4), dd=s.slice(4,6);
+  const cur = new Date().getFullYear()%100;
+  let cc = future ? 2000 : (yy>cur?1900:2000);
+  return `${dd}/${mm}/${cc+yy}`;
+}
+const COUNTRY = {ARE:'امارات',IRN:'ایران',IRQ:'عراق',TUR:'ترکیه',SAU:'عربستان',QAT:'قطر',KWT:'کویت',OMN:'عمان',BHR:'بحرین',AFG:'افغانستان',PAK:'پاکستان',IND:'هند',GBR:'بریتانیا',USA:'آمریکا',CAN:'کانادا',DEU:'آلمان',FRA:'فرانسه',ESP:'اسپانیا',ITA:'ایتالیا',NLD:'هلند'};
+function ctry(c){ c=c.replace(/</g,''); return COUNTRY[c] ? `${c} (${COUNTRY[c]})` : (c||''); }
+function sex(c){ return c==='M'?'مرد (M)':c==='F'?'زن (F)':''; }
+
+function parseMrz(mrz){
+  const out = {};
+  if (mrz.type==='TD3'){
+    const a=mrz.lines[0], b=mrz.lines[1];
+    out.doc_type = a[0]==='V' ? 'ویزا (MRV)' : 'پاسپورت';
+    out.issuer = ctry(a.slice(2,5));
+    const nm = names(a.slice(5));
+    out.surname = nm.sur; out.given = nm.giv;
+    out.number = fixDigits(b.slice(0,9)).replace(/</g,'');
+    out.nationality = ctry(b.slice(10,13));
+    out.dob = ymd(b.slice(13,19), false);
+    out.sex = sex(b[20]);
+    out.expiry = ymd(b.slice(21,27), true);
+  } else { // TD1
+    const a=mrz.lines[0], b=mrz.lines[1], c=mrz.lines[2];
+    out.doc_type = 'کارت شناسایی / امارات آیدی';
+    out.issuer = ctry(a.slice(2,5));
+    out.number = fixDigits(a.slice(5,14)).replace(/</g,'');
+    out.dob = ymd(b.slice(0,6), false);
+    out.sex = sex(b[7]);
+    out.expiry = ymd(b.slice(8,14), true);
+    out.nationality = ctry(b.slice(15,18));
+    const nm = names(c);
+    out.surname = nm.sur; out.given = nm.giv;
+  }
+  return out;
+}
+
+// Emirates ID number 784-YYYY-NNNNNNN-N anywhere in the text
+function findEid(text){
+  const digits = text.replace(/[^\d]/g,'');
+  const m = digits.match(/784\d{12}/);
+  if(!m) return '';
+  const d=m[0];
+  return `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7,14)}-${d.slice(14)}`;
+}
+
+/* ---------- rendering ---------- */
+const FIELD_LABELS = [
+  ['doc_type','نوع سند'],
+  ['surname','نام خانوادگی'],
+  ['given','نام'],
+  ['number','شماره سند'],
+  ['nationality','ملیت'],
+  ['issuer','کشور صادرکننده'],
+  ['dob','تاریخ تولد'],
+  ['sex','جنسیت'],
+  ['expiry','تاریخ انقضا'],
+  ['emirates_id','شماره امارات آیدی'],
+];
+
+function buildTextOutput(fileName, fields, mrz, raw){
+  let t = `سند‌خوان — Travel Market\nفایل: ${fileName}\nزمان: ${new Date().toLocaleString('fa-IR')}\n`;
+  t += `${'='.repeat(40)}\n\nاطلاعات استخراج‌شده\n${'-'.repeat(40)}\n`;
+  FIELD_LABELS.forEach(([k,lab])=>{
+    const v = fields[k];
+    t += `${lab}: ${v && String(v).trim() ? v : '— یافت نشد —'}\n`;
+  });
+  if (mrz){ t += `\nMRZ\n${'-'.repeat(40)}\n${mrz.lines.join('\n')}\n`; }
+  t += `\nمتن کامل OCR\n${'-'.repeat(40)}\n${raw}\n`;
+  return t;
+}
+
+function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
+  const hasAny = FIELD_LABELS.some(([k])=>fields[k] && String(fields[k]).trim());
+  const badge = mrz ? (fields.doc_type||'سند') : 'نامشخص';
+
+  let rows = '';
+  if (mrz || fields.emirates_id){
+    rows = '<div class="fields">' + FIELD_LABELS.map(([k,lab])=>{
+      const v = fields[k];
+      const ok = v && String(v).trim();
+      return `<div class="row ${ok?'':'miss'}">
+        <div class="k">${lab}</div>
+        <div class="v" ${ok && /^[\x00-\x7F]+$/.test(String(v))?'dir="ltr"':''}>${ok?esc(v):'— یافت نشد —'}</div>
+      </div>`;
+    }).join('') + '</div>';
+  } else {
+    rows = '<div class="no-mrz">ناحیه MRZ (خطوط ماشین‌خوان) پیدا نشد — متن کامل در پایین در دسترس است. برای نتیجه‌ی بهتر، عکس واضح‌تر و صاف از قسمت پایین پاسپورت/کارت بگیرید.</div>';
+  }
+
+  const txt = buildTextOutput(fileName, fields, mrz, raw);
+
+  card.innerHTML =
+    `<div class="card-head">
+       <div class="fname" title="${esc(fileName)}">${esc(fileName)}</div>
+       <div class="badge ${mrz?'':'unknown'}">${esc(badge)}</div>
+     </div>
+     <div class="preview-zone" id="pv"></div>
+     ${rows}
+     ${mrz?`<div class="block"><h4>MRZ — ناحیه ماشین‌خوان</h4><div class="mrz">${esc(mrz.lines.join('\n'))}</div></div>`:''}
+     <div class="block">
+       <details class="raw"><summary>متن کامل OCR</summary>
+         <textarea class="rawtext" readonly>${esc(raw)}</textarea>
+       </details>
+     </div>
+     <div class="actions">
+       <button class="btn primary" data-act="copy">کپی اطلاعات</button>
+       <button class="btn" data-act="download">دانلود فایل متنی</button>
+       <button class="btn" data-act="copyraw">کپی متن خام</button>
+     </div>`;
+
+  // attach the preview canvas (downscaled for display)
+  const pv = card.querySelector('#pv');
+  previewCanvas.style.maxHeight='360px';
+  pv.appendChild(previewCanvas);
+
+  card.querySelector('[data-act="copy"]').onclick = ()=>{ navigator.clipboard.writeText(txt); toast('اطلاعات کپی شد'); };
+  card.querySelector('[data-act="copyraw"]').onclick = ()=>{ navigator.clipboard.writeText(raw); toast('متن خام کپی شد'); };
+  card.querySelector('[data-act="download"]').onclick = ()=>{
+    const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName.replace(/\.[^.]+$/,'') + '.txt';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+    toast('فایل دانلود شد');
+  };
+}
+
+/* ---------- per-file pipeline ---------- */
+async function processFile(file){
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML =
+    `<div class="card-head"><div class="fname">${esc(file.name)}</div><div class="badge unknown">در حال خواندن</div></div>
+     <div class="preview-zone"><div class="scanline"></div></div>
+     <div class="proc"><span>در حال استخراج متن…</span><div class="bar"><i></i></div></div>`;
+  resultsEl.prepend(card);
+  card.scrollIntoView({behavior:'smooth', block:'center'});
+  currentBar = card.querySelector('.bar > i');
+
+  try{
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const canvases = isPdf ? await loadPdfFile(file) : [await loadImageFile(file)];
+
+    const w = await getWorker();
+    let raw = '';
+    for (const c of canvases){
+      const { data } = await w.recognize(c);
+      raw += (raw?'\n\n':'') + data.text;
+    }
+    raw = raw.replace(/[ \t]+\n/g,'\n').trim();
+
+    const mrz = findMrz(raw);
+    const fields = mrz ? parseMrz(mrz) : {};
+    const eid = findEid(raw);
+    if (eid) fields.emirates_id = eid;
+
+    renderCard(card, file.name, canvases[0], fields, mrz, raw);
+  }catch(err){
+    const msg = String(err && err.message || err);
+    const isWorker = /Worker|blob|sandbox|origin/i.test(msg);
+    const body = isWorker
+      ? `این صفحه در یک محیط محدود (مثل پیش‌نمایش داخل چت) باز شده و اجازه‌ی اجرای موتور OCR را نمی‌دهد.<br>
+         لطفاً فایل را روی <b>GitHub Pages</b> یا یک هاست عادی بگذارید و از آدرس اصلی بازش کنید.`
+      : `پردازش این فایل ناموفق بود: ${esc(msg)}`;
+    card.innerHTML =
+      `<div class="card-head"><div class="fname">${esc(file.name)}</div><div class="badge unknown">خطا</div></div>
+       <div class="no-mrz" style="color:var(--danger)">${body}</div>`;
+  }finally{
+    currentBar = null;
+  }
+}
+
+function enqueue(files){
+  [...files].forEach(file=>{
+    queue = queue.then(()=>processFile(file));
+  });
+}
+
+/* ---------- input wiring ---------- */
+fileEl.addEventListener('change', e=>{ if(e.target.files.length) enqueue(e.target.files); fileEl.value=''; });
+['dragenter','dragover'].forEach(ev=>dropEl.addEventListener(ev, e=>{e.preventDefault();dropEl.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dropEl.addEventListener(ev, e=>{e.preventDefault();dropEl.classList.remove('drag');}));
+dropEl.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) enqueue(e.dataTransfer.files); });
+</script>
+</body>
+</html>
