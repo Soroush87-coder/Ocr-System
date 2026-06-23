@@ -326,16 +326,37 @@ function cleanMrzLine(line){
 }
 // turn raw OCR text into candidate MRZ lines
 function findMrz(text){
-  const raw = text.split(/\r?\n/).map(cleanMrzLine).filter(l=>l.length>=28);
-  // keep lines that look like MRZ (lots of A-Z0-9<, at least one <)
-  const cand = raw.filter(l => /</.test(l) && (l.match(/[A-Z0-9<]/g)||[]).length/l.length > 0.9);
-  // TD3 passport / visa: two lines ~44
-  const l44 = cand.filter(l => l.length>=40 && l.length<=46);
-  if (l44.length>=2) return {type:'TD3', lines:[norm(l44[0],44), norm(l44[1],44)]};
-  // TD1 id card: three lines ~30
-  const l30 = cand.filter(l => l.length>=28 && l.length<=33);
-  if (l30.length>=3) return {type:'TD1', lines:[norm(l30[0],30), norm(l30[1],30), norm(l30[2],30)]};
-  if (l44.length===1 && l30.length>=2) return {type:'TD1', lines:l30.slice(0,3).map(x=>norm(x,30))};
+  const lines = text.split(/\r?\n/).map(cleanMrzLine).filter(Boolean);
+  // a line looks like MRZ if it's pure MRZ charset and is mostly digits or has fillers
+  const mrzish = lines.filter(l=>{
+    if(!/^[A-Z0-9<]+$/.test(l)) return false;
+    const len=l.length;
+    const inWin = (len>=40&&len<=46) || (len>=28&&len<=34);
+    const digits=(l.match(/\d/g)||[]).length;
+    return inWin && (l.includes('<') || digits>=5);
+  });
+
+  const l44 = mrzish.filter(l=>l.length>=40&&l.length<=46);
+  const l30 = mrzish.filter(l=>l.length>=28&&l.length<=34);
+
+  // --- TD3 (passport / visa): 2 lines of 44 ---
+  if (l44.length>=2){
+    let line1 = l44.find(l=>l.includes('<<') || /^[PV]/.test(l)) || l44[0];
+    let line2 = l44.find(l=>l!==line1 && /\d{6}/.test(l)) || l44.find(l=>l!==line1) || l44[1];
+    return {type:'TD3', lines:[norm(line1,44), norm(line2,44)]};
+  }
+
+  // --- TD1 (ID card / Emirates ID): 3 lines of 30 ---
+  if (l30.length>=2){
+    // line 2 carries DOB(6)+check+sex(M/F/<)
+    let line2 = l30.find(l=>/^\d{6}.[MF<]/.test(l));
+    // line 1 starts with doc type + issuing country (often contains ARE)
+    let line1 = l30.find(l=>l!==line2 && (/ARE|^[IAC]/.test(l)) && /\d{4}/.test(l));
+    // line 3 is the name line (LETTERS with << separators)
+    let line3 = l30.find(l=>l!==line1 && l!==line2 && /[A-Z]{2,}<</.test(l));
+    if (!line1) line1 = l30.find(l=>l!==line2);
+    if (line1 && line2) return {type:'TD1', lines:[norm(line1,30), norm(line2,30), norm(line3||'',30)]};
+  }
   return null;
 }
 function norm(l,n){ l=l.slice(0,n); while(l.length<n) l+='<'; return l; }
@@ -366,7 +387,7 @@ function parseMrz(mrz){
     out.issuer = ctry(a.slice(2,5));
     const nm = names(a.slice(5));
     out.surname = nm.sur; out.given = nm.giv;
-    out.number = fixDigits(b.slice(0,9)).replace(/</g,'');
+    out.number = b.slice(0,9).replace(/</g,'').trim();
     out.nationality = ctry(b.slice(10,13));
     out.dob = ymd(b.slice(13,19), false);
     out.sex = sex(b[20]);
@@ -395,48 +416,122 @@ function findEid(text){
   return `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7,14)}-${d.slice(14)}`;
 }
 
+// pull fields from the printed (human-readable) OCR text as a fallback / complement
+function parseLabeled(text){
+  const f = {};
+  const after = (re)=>{ const m = text.match(re); return m ? m[1].replace(/\s+/g,' ').trim() : ''; };
+  const date  = (re)=>{ const m = text.match(re); return m ? m[1].replace(/[.\-]/g,'/') : ''; };
+
+  f.name        = after(/Name\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{2,60})/);
+  f.nationality = after(/Nationality\s*[:\/]?\s*([A-Za-z][A-Za-z ()'’\-]{2,40})/);
+  f.occupation  = after(/Occupation\s*[:\/]?\s*([A-Za-z][A-Za-z .'’&\-]{2,40})/);
+  f.issue_place = after(/Issuing Place\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{2,30})/);
+  f.passport    = after(/Passport\s*(?:No|Number|N)?\.?\s*[:\/]?\s*([A-Z0-9]{6,12})/);
+  f.sex         = after(/Sex\s*[:\/]?\s*([MF])\b/);
+  f.dob         = date(/(?:Date of Birth|Birth)\s*[:\/]?\s*(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
+  f.issue_date  = date(/(?:Issuing Date|Issue Date)\s*[:\/]?[^0-9]{0,12}(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
+  f.expiry      = date(/(?:Expiry Date|Date of Expiry|Valid Until|Expiry)\s*[:\/]?[^0-9]{0,12}(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
+  // tidy a trailing all-caps Arabic-transliteration noise word if present
+  if (f.name) f.name = f.name.replace(/\s+[A-Z]{1,3}$/,'').trim();
+  return f;
+}
+
+function docTypeFromText(text){
+  if (/Resident Identity Card/i.test(text)) return 'کارت اقامت امارات (Resident ID)';
+  if (/Golden\s*Residence|Golden\s*Visa/i.test(text)) return 'اقامت طلایی (Golden)';
+  if (/Residence|Entry Permit|VISA/i.test(text)) return 'ویزا / اقامت';
+  if (/PASSPORT/i.test(text)) return 'پاسپورت';
+  if (/Identity Card/i.test(text)) return 'کارت شناسایی';
+  return '';
+}
+
+// merge MRZ result + printed-text result into one field set
+function mergeFields(mrz, raw){
+  const m = mrz ? parseMrz(mrz) : {};
+  const t = parseLabeled(raw);
+  const f = {};
+  f.doc_type    = m.doc_type || docTypeFromText(raw) || '';
+  f.full_name   = t.name || [m.surname, m.given].filter(Boolean).join(' ');
+  f.surname     = m.surname || '';
+  f.given       = m.given || '';
+  f.number      = m.number || t.passport || '';
+  f.nationality = m.nationality || t.nationality || '';
+  f.issuer      = m.issuer || '';
+  f.dob         = m.dob || t.dob || '';
+  f.sex         = m.sex || (t.sex ? sex(t.sex) : '');
+  f.expiry      = m.expiry || t.expiry || '';
+  f.issue_date  = t.issue_date || '';
+  f.issue_place = t.issue_place || '';
+  f.occupation  = t.occupation || '';
+  f.emirates_id = findEid(raw);
+  return f;
+}
+
 /* ---------- rendering ---------- */
-const FIELD_LABELS = [
+// always shown (marked "not found" when empty)
+const CORE_FIELDS = [
   ['doc_type','نوع سند'],
-  ['surname','نام خانوادگی'],
-  ['given','نام'],
+  ['full_name','نام کامل'],
   ['number','شماره سند'],
   ['nationality','ملیت'],
-  ['issuer','کشور صادرکننده'],
   ['dob','تاریخ تولد'],
   ['sex','جنسیت'],
   ['expiry','تاریخ انقضا'],
+];
+// shown only when a value exists
+const EXTRA_FIELDS = [
+  ['surname','نام خانوادگی'],
+  ['given','نام'],
+  ['issuer','کشور صادرکننده'],
+  ['issue_date','تاریخ صدور'],
+  ['issue_place','محل صدور'],
+  ['occupation','شغل'],
   ['emirates_id','شماره امارات آیدی'],
 ];
+
+function displayFields(fields){
+  // skip surname/given if we already have a full name
+  const skip = fields.full_name ? new Set(['surname','given']) : new Set();
+  const core = CORE_FIELDS;
+  const extra = EXTRA_FIELDS.filter(([k])=> !skip.has(k) && fields[k] && String(fields[k]).trim());
+  return {core, extra};
+}
 
 function buildTextOutput(fileName, fields, mrz, raw){
   let t = `سند‌خوان — Travel Market\nفایل: ${fileName}\nزمان: ${new Date().toLocaleString('fa-IR')}\n`;
   t += `${'='.repeat(40)}\n\nاطلاعات استخراج‌شده\n${'-'.repeat(40)}\n`;
-  FIELD_LABELS.forEach(([k,lab])=>{
+  const {core, extra} = displayFields(fields);
+  core.forEach(([k,lab])=>{
     const v = fields[k];
     t += `${lab}: ${v && String(v).trim() ? v : '— یافت نشد —'}\n`;
   });
+  extra.forEach(([k,lab])=>{ t += `${lab}: ${fields[k]}\n`; });
   if (mrz){ t += `\nMRZ\n${'-'.repeat(40)}\n${mrz.lines.join('\n')}\n`; }
   t += `\nمتن کامل OCR\n${'-'.repeat(40)}\n${raw}\n`;
   return t;
 }
 
 function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
-  const hasAny = FIELD_LABELS.some(([k])=>fields[k] && String(fields[k]).trim());
-  const badge = mrz ? (fields.doc_type||'سند') : 'نامشخص';
+  const {core, extra} = displayFields(fields);
+  const hasAny = core.some(([k])=>fields[k] && String(fields[k]).trim()) || extra.length>0;
+  const badge = fields.doc_type || 'نامشخص';
+  const badgeClass = fields.doc_type ? '' : 'unknown';
 
-  let rows = '';
-  if (mrz || fields.emirates_id){
-    rows = '<div class="fields">' + FIELD_LABELS.map(([k,lab])=>{
-      const v = fields[k];
-      const ok = v && String(v).trim();
-      return `<div class="row ${ok?'':'miss'}">
-        <div class="k">${lab}</div>
-        <div class="v" ${ok && /^[\x00-\x7F]+$/.test(String(v))?'dir="ltr"':''}>${ok?esc(v):'— یافت نشد —'}</div>
-      </div>`;
-    }).join('') + '</div>';
+  const rowHtml = ([k,lab])=>{
+    const v = fields[k];
+    const ok = v && String(v).trim();
+    const ltr = ok && /^[\x00-\x7F]+$/.test(String(v));
+    return `<div class="row ${ok?'':'miss'}">
+      <div class="k">${lab}</div>
+      <div class="v" ${ltr?'dir="ltr"':''}>${ok?esc(v):'— یافت نشد —'}</div>
+    </div>`;
+  };
+
+  let rows;
+  if (hasAny){
+    rows = '<div class="fields">' + core.map(rowHtml).join('') + extra.map(rowHtml).join('') + '</div>';
   } else {
-    rows = '<div class="no-mrz">ناحیه MRZ (خطوط ماشین‌خوان) پیدا نشد — متن کامل در پایین در دسترس است. برای نتیجه‌ی بهتر، عکس واضح‌تر و صاف از قسمت پایین پاسپورت/کارت بگیرید.</div>';
+    rows = '<div class="no-mrz">این سند فرمت استاندارد (MRZ یا برچسب‌دار) نداشت، پس فیلد ساختاریافته‌ای استخراج نشد. متن کامل OCR در پایین در دسترس است.</div>';
   }
 
   const txt = buildTextOutput(fileName, fields, mrz, raw);
@@ -503,9 +598,7 @@ async function processFile(file){
     raw = raw.replace(/[ \t]+\n/g,'\n').trim();
 
     const mrz = findMrz(raw);
-    const fields = mrz ? parseMrz(mrz) : {};
-    const eid = findEid(raw);
-    if (eid) fields.emirates_id = eid;
+    const fields = mergeFields(mrz, raw);
 
     renderCard(card, file.name, canvases[0], fields, mrz, raw);
   }catch(err){
