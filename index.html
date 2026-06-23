@@ -601,7 +601,7 @@ function parseLabeled(text){
   const flat = cleanFieldValue(text.replace(/\r?\n/g, ' | '));
   const textValue = '[A-Za-z][A-Za-z0-9 .,&()\'’\\-]{1,80}';
   const dateValue = '[0-9OISBZ]{1,4}[.\\-/][0-9OISBZ]{1,2}[.\\-/][0-9OISBZ]{2,4}';
-  const stopWords = /(?:Name|Surname|Family|Given|Nationality|Passport|Document|Card|Identity|ID|Date|Birth|Issue|Issu|Expiry|Expire|Expiration|Occupation|Profession|Company|Employer|Sponsor|Sex)\b/i;
+  const stopWords = /(?:Name|Surname|Family|Given|Nationality|Passport|Document|Card|Identity|ID|Date|Birth|Place|Issue|Issu|Expiry|Expire|Expiration|Occupation|Profession|Company|Employer|Sponsor|Sex)\b/i;
   const tidyText = v => cleanFieldValue(v);
   const findLabel = (labels, valueRe, opts={}) => {
     const label = new RegExp(`(?:^|\\b)(?:${labels.join('|')})(?:\\b|$)`, 'i');
@@ -630,12 +630,14 @@ function parseLabeled(text){
   f.occupation  = findLabel(['Occupation','Profession','Job\\s*Title'], textValue);
   f.company_name = findLabel(['Company\\s*Name','Employer','Sponsor','Place\\s*of\\s*Work','Work\\s*Place','Establishment'], textValue);
   f.issue_place = findLabel(['Issuing\\s*Place','Place\\s*of\\s*Issue','Authority'], textValue);
-  f.place_of_birth = findLabel(['Place\\s*of\\s*Birth','Birth\\s*Place','Country\\s*of\\s*Birth','POB'], textValue);
+  const birthComboRe = new RegExp(`Date\\s*(?:&|and)\\s*Place\\s*of\\s*Birth\\s*[:;\\-/]?\\s*(${dateValue})\\s*[-–—]\\s*([A-Za-z][A-Za-z .'\\-]{1,40})`, 'i');
+  const birthCombo = lines.map(l => l.match(birthComboRe)).find(Boolean);
+  f.place_of_birth = birthCombo ? tidyText(birthCombo[2]) : findLabel(['Place\\s*of\\s*Birth','Birth\\s*Place','Country\\s*of\\s*Birth','POB'], textValue);
   f.passport    = findLabel(['Passport\\s*(?:No\\.?|Number)?','Document\\s*(?:No\\.?|Number)'], '[A-Z0-9]*\\d[A-Z0-9]{5,11}');
   f.card_number = findLabel(['ID\\s*(?:No\\.?|Number)','Identity\\s*(?:No\\.?|Number)','Card\\s*(?:No\\.?|Number)'], '[0-9\\- ]{10,25}');
   f.sex         = findLabel(['Sex','Gender'], '\\b[MF]\\b');
-  f.dob         = findLabel(['Date\\s*of\\s*Birth','Birth\\s*Date','DOB'], dateValue, {date:true});
-  f.issue_date  = findLabel(['Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue'], dateValue, {date:true});
+  f.dob         = birthCombo ? normalizeDate(birthCombo[1]) : findLabel(['Date\\s*of\\s*Birth','Birth\\s*Date','DOB'], dateValue, {date:true});
+  f.issue_date  = findLabel(['Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue','Date\\s*of\\s*[I1l|]ssue','Date\\s*of\\s*Issu[e3]'], dateValue, {date:true});
   f.expiry      = findLabel(['Expiry\\s*Date','Expire\\s*Date','Expiration\\s*Date','Date\\s*of\\s*Expiry','Valid\\s*Until'], dateValue, {date:true});
   return f;
 }
