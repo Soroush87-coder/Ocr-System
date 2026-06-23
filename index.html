@@ -441,6 +441,22 @@ function ymd(s, future){
 const COUNTRY = {ARE:'امارات',IRN:'ایران',IRQ:'عراق',TUR:'ترکیه',SAU:'عربستان',QAT:'قطر',KWT:'کویت',OMN:'عمان',BHR:'بحرین',AFG:'افغانستان',PAK:'پاکستان',IND:'هند',GBR:'بریتانیا',USA:'آمریکا',CAN:'کانادا',DEU:'آلمان',FRA:'فرانسه',ESP:'اسپانیا',ITA:'ایتالیا',NLD:'هلند'};
 function ctry(c){ c=c.replace(/</g,''); return COUNTRY[c] ? `${c} (${COUNTRY[c]})` : (c||''); }
 function sex(c){ return c==='M'?'مرد (M)':c==='F'?'زن (F)':''; }
+function cleanFieldValue(s){
+  return String(s || '')
+    .replace(/[|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:;,.\/\-]+|[\s:;,.\/\-]+$/g, '')
+    .trim();
+}
+function normalizeDate(s){
+  s = fixDigits(String(s || '').replace(/[^\d.\-\/]/g, ''));
+  const m = s.match(/^(\d{1,4})[.\-\/](\d{1,2})[.\-\/](\d{2,4})$/);
+  if (!m) return cleanFieldValue(s);
+  let a=m[1], b=m[2], c=m[3];
+  if (a.length === 4) return `${c.padStart(2,'0')}/${b.padStart(2,'0')}/${a}`;
+  if (c.length === 2) c = (+c > 40 ? '19' : '20') + c;
+  return `${a.padStart(2,'0')}/${b.padStart(2,'0')}/${c}`;
+}
 
 // TD3 line 2: anchor on nationality(3 letters)+dob+sex+expiry so a dropped/extra OCR char doesn't shift everything
 function parseTD3Line2(b){
@@ -500,26 +516,53 @@ function findEid(text){
 // pull fields from the printed (human-readable) OCR text as a fallback / complement
 function parseLabeled(text){
   const f = {};
-  const after = (re)=>{ const m = text.match(re); return m ? m[1].replace(/\s+/g,' ').trim() : ''; };
-  const date  = (re)=>{ const m = text.match(re); return m ? m[1].replace(/[.\-]/g,'/') : ''; };
+  const lines = text.split(/\r?\n/)
+    .map(l => cleanFieldValue(l))
+    .filter(Boolean);
+  const flat = cleanFieldValue(text.replace(/\r?\n/g, ' | '));
+  const textValue = '[A-Za-z][A-Za-z0-9 .,&()\'’\\-]{1,80}';
+  const dateValue = '[0-9OISBZ]{1,4}[.\\-/][0-9OISBZ]{1,2}[.\\-/][0-9OISBZ]{2,4}';
+  const stopWords = /(?:Name|Surname|Family|Given|Nationality|Passport|Document|Card|Identity|ID|Date|Birth|Issue|Issu|Expiry|Expire|Expiration|Occupation|Profession|Company|Employer|Sponsor|Sex)\b/i;
+  const tidyText = v => cleanFieldValue(v);
+  const findLabel = (labels, valueRe, opts={}) => {
+    const label = new RegExp(`(?:^|\\b)(?:${labels.join('|')})(?:\\b|$)`, 'i');
+    const value = new RegExp(valueRe, 'i');
+    for (let i=0; i<lines.length; i++){
+      const labelMatch = lines[i].match(label);
+      if (!labelMatch) continue;
+      const sameLine = lines[i].slice(labelMatch.index + labelMatch[0].length);
+      let m = sameLine.match(value);
+      if (m) return opts.date ? normalizeDate(m[0]) : tidyText(m[0]);
+      for (let j=i+1; j<Math.min(lines.length, i+3); j++){
+        if (stopWords.test(lines[j]) && !value.test(lines[j])) break;
+        m = lines[j].match(value);
+        if (m) return opts.date ? normalizeDate(m[0]) : tidyText(m[0]);
+      }
+    }
+    const re = new RegExp(`(?:^|\\b)(?:${labels.join('|')})(?:\\b|$)\\s*[:;\\-/]?\\s*(${valueRe})`, 'i');
+    const m = flat.match(re);
+    return m ? (opts.date ? normalizeDate(m[1]) : tidyText(m[1])) : '';
+  };
 
-  f.name        = after(/Name\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{2,60})/);
-  f.surname     = after(/(?:Surname|Family Name)\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{1,40})/);
-  f.given       = after(/(?:Given Names?|Forename|First Name)\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{1,40})/);
-  f.nationality = after(/Nationality\s*[:\/]?\s*([A-Za-z][A-Za-z ()'’\-]{2,40})/);
-  f.occupation  = after(/Occupation\s*[:\/]?\s*([A-Za-z][A-Za-z .'’&\-]{2,40})/);
-  f.issue_place = after(/Issuing Place\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{2,30})/);
-  f.passport    = after(/Passport\s*(?:No|Number|N)?\.?\s*[:\/]?\s*([A-Z0-9]{6,12})/);
-  f.sex         = after(/Sex\s*[:\/]?\s*([MF])\b/);
-  f.dob         = date(/(?:Date of Birth|Birth)\s*[:\/]?\s*(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
-  f.issue_date  = date(/(?:Issuing Date|Issue Date)\s*[:\/]?[^0-9]{0,12}(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
-  f.expiry      = date(/(?:Expiry Date|Date of Expiry|Valid Until|Expiry)\s*[:\/]?[^0-9]{0,12}(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})/i);
-  // tidy a trailing all-caps Arabic-transliteration noise word if present
-  if (f.name) f.name = f.name.replace(/\s+[A-Z]{1,3}$/,'').trim();
+  f.name        = findLabel(['Full\\s*Name','Name'], textValue);
+  f.surname     = findLabel(['Surname','Sur\\s*Name','Family\\s*Name','Last\\s*Name'], textValue);
+  f.given       = findLabel(['Given\\s*Names?','Given\\s*Name','Forename','First\\s*Name'], textValue);
+  f.nationality = findLabel(['Nationality'], textValue);
+  f.occupation  = findLabel(['Occupation','Profession','Job\\s*Title'], textValue);
+  f.company_name = findLabel(['Company\\s*Name','Employer','Sponsor','Place\\s*of\\s*Work','Work\\s*Place','Establishment'], textValue);
+  f.issue_place = findLabel(['Issuing\\s*Place','Place\\s*of\\s*Issue','Authority'], textValue);
+  f.place_of_birth = findLabel(['Place\\s*of\\s*Birth','Birth\\s*Place','Country\\s*of\\s*Birth','POB'], textValue);
+  f.passport    = findLabel(['Passport\\s*(?:No\\.?|Number)?','Document\\s*(?:No\\.?|Number)'], '[A-Z0-9]*\\d[A-Z0-9]{5,11}');
+  f.card_number = findLabel(['ID\\s*(?:No\\.?|Number)','Identity\\s*(?:No\\.?|Number)','Card\\s*(?:No\\.?|Number)'], '[0-9\\- ]{10,25}');
+  f.sex         = findLabel(['Sex','Gender'], '\\b[MF]\\b');
+  f.dob         = findLabel(['Date\\s*of\\s*Birth','Birth\\s*Date','DOB'], dateValue, {date:true});
+  f.issue_date  = findLabel(['Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue'], dateValue, {date:true});
+  f.expiry      = findLabel(['Expiry\\s*Date','Expire\\s*Date','Expiration\\s*Date','Date\\s*of\\s*Expiry','Valid\\s*Until'], dateValue, {date:true});
   return f;
 }
 
 function docTypeFromText(text){
+  if (/Emirates\s*ID|Emirates\s*Identity|Resident\s*Identity\s*Card|United\s*Arab\s*Emirates[\s\S]{0,80}Identity/i.test(text)) return 'امارات آیدی';
   if (/Resident Identity Card/i.test(text)) return 'کارت اقامت امارات (Resident ID)';
   if (/Golden\s*Residence|Golden\s*Visa/i.test(text)) return 'اقامت طلایی (Golden)';
   if (/Residence|Entry Permit|VISA/i.test(text)) return 'ویزا / اقامت';
@@ -533,13 +576,16 @@ function mergeFields(mrz, raw){
   const m = mrz ? parseMrz(mrz) : {};
   const t = parseLabeled(raw);
   const f = {};
-  f.doc_type    = m.doc_type || docTypeFromText(raw) || '';
+  const eid = findEid(raw);
+  f.doc_type    = (eid ? 'امارات آیدی' : '') || m.doc_type || docTypeFromText(raw) || '';
   f.surname     = m.surname || t.surname || '';
   f.given       = m.given   || t.given   || '';
   const mrzFull = [m.surname, m.given].filter(Boolean).join(' ');
   const labFull = [t.surname, t.given].filter(Boolean).join(' ') || t.name;
   f.full_name   = mrzFull || m.name_combined || labFull || '';
+  f.name        = f.given || t.name || '';
   f.number      = m.number || t.passport || '';
+  f.passport_number = f.number;
   f.nationality = m.nationality || t.nationality || '';
   f.issuer      = m.issuer || '';
   f.dob         = m.dob || t.dob || '';
@@ -547,38 +593,54 @@ function mergeFields(mrz, raw){
   f.expiry      = m.expiry || t.expiry || '';
   f.issue_date  = t.issue_date || '';
   f.issue_place = t.issue_place || '';
+  f.place_of_birth = t.place_of_birth || '';
   f.occupation  = t.occupation || '';
-  f.emirates_id = findEid(raw);
+  f.company_name = t.company_name || '';
+  f.emirates_id = eid || cleanFieldValue(t.card_number).replace(/\s+/g,'-');
+  f.document_kind = detectDocumentKind(f, mrz, raw);
   return f;
 }
 
 /* ---------- rendering ---------- */
-// shown only when a value exists
-const EXTRA_FIELDS = [
-  ['issuer','کشور صادرکننده'],
-  ['issue_date','تاریخ صدور'],
-  ['issue_place','محل صدور'],
-  ['occupation','شغل'],
-  ['emirates_id','شماره امارات آیدی'],
-];
+function detectDocumentKind(fields, mrz, raw){
+  if (fields.emirates_id || /Emirates\s*ID|Emirates\s*Identity|Resident\s*Identity\s*Card/i.test(raw)) return 'emirates_id';
+  if (mrz && mrz.type === 'TD1' && /ARE/.test(mrz.lines.join(''))) return 'emirates_id';
+  if (/پاسپورت/.test(fields.doc_type) || /PASSPORT/i.test(raw)) return 'passport';
+  return 'generic';
+}
 
-function displayFields(fields){
-  // passports/MRZ give surname + given separately → show both;
-  // a single printed name (e.g. Emirates ID) → show one combined "full name"
-  const nameRows = (fields.surname || fields.given)
-    ? [['surname','نام خانوادگی'], ['given','نام']]
-    : [['full_name','نام کامل']];
-  const core = [
+const FIELD_SETS = {
+  passport: [
+    ['name','Name'],
+    ['surname','Surname'],
+    ['passport_number','Passport number'],
+    ['expiry','Expiry date'],
+    ['issue_date','Issue date'],
+    ['place_of_birth','Place of birth'],
+    ['dob','Date of birth'],
+  ],
+  emirates_id: [
+    ['emirates_id','Emirates ID'],
+    ['issue_date','Issue date'],
+    ['expiry','Expire date'],
+    ['occupation','Occupation'],
+    ['company_name','Company name'],
+  ],
+  generic: [
     ['doc_type','نوع سند'],
-    ...nameRows,
+    ['full_name','نام کامل'],
     ['number','شماره سند'],
     ['nationality','ملیت'],
     ['dob','تاریخ تولد'],
     ['sex','جنسیت'],
     ['expiry','تاریخ انقضا'],
-  ];
-  const extra = EXTRA_FIELDS.filter(([k])=> fields[k] && String(fields[k]).trim());
-  return {core, extra};
+    ['issue_date','تاریخ صدور'],
+  ],
+};
+
+function displayFields(fields){
+  const core = FIELD_SETS[fields.document_kind] || FIELD_SETS.generic;
+  return {core, extra:[]};
 }
 
 function buildTextOutput(fileName, fields, mrz, raw){
