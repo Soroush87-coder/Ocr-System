@@ -75,7 +75,7 @@ body{
 .brand{display:flex;align-items:flex-start;gap:12px;margin-bottom:22px}
 .brand .mark{color:var(--indigo);font-size:24px;margin-top:4px}
 .brand h1{margin:0;font-family:'Inter',sans-serif;font-weight:800;font-size:27px;letter-spacing:-.5px;color:var(--ink)}
-.brand .tagline{margin:2px 0 0;font-size:13.5px;color:var(--muted)}
+.brand .tagline{margin:3px 0 0;font-size:14.5px;color:var(--muted)}
 
 /* drop zone */
 .drop{
@@ -89,9 +89,9 @@ body{
 }
 .drop:hover{border-color:var(--indigo);background:var(--indigo-soft)}
 .drop.drag{border-color:var(--indigo);background:var(--indigo-soft)}
-.drop .ic{font-size:30px;line-height:1;color:var(--indigo)}
-.drop .big{font-weight:700;margin:10px 0 2px;font-size:15.5px;color:var(--ink)}
-.drop .small{color:var(--muted);font-size:13px}
+.drop .ic{font-size:32px;line-height:1;color:var(--indigo)}
+.drop .big{font-weight:700;margin:12px 0 4px;font-size:17px;color:var(--ink)}
+.drop .small{color:var(--muted);font-size:14px}
 .drop input{display:none}
 .formats{margin-top:14px;font-size:12px}
 .formats span{display:inline-block;background:#fff;border:1px solid var(--line);
@@ -111,7 +111,7 @@ body{
   display:flex;align-items:center;gap:12px;
   padding:13px 15px;border-bottom:1px solid var(--line);
 }
-.card-head .fname{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.card-head .fname{font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .badge{
   flex:none;font-size:11px;font-weight:700;letter-spacing:.2px;
   padding:4px 10px;border-radius:999px;
@@ -134,11 +134,11 @@ body{
 .bar > i{display:block;height:100%;width:0;background:var(--indigo);border-radius:999px;transition:width .2s ease}
 
 /* fields table */
-.fields{padding:6px 16px 4px}
-.row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f1f1f7}
+.fields{padding:10px 18px 8px}
+.row{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #f1f1f7;line-height:1.75}
 .row:last-child{border-bottom:0}
-.row .k{flex:none;width:140px;color:var(--muted);font-size:13px;font-weight:500}
-.row .v{flex:1;font-family:var(--mono);font-size:13.5px;font-weight:500;color:var(--ink);word-break:break-word}
+.row .k{flex:none;width:150px;color:var(--muted);font-size:14px;font-weight:500}
+.row .v{flex:1;font-family:var(--mono);font-size:15px;font-weight:500;color:var(--ink);word-break:break-word;line-height:1.7}
 .row .v[dir="ltr"]{text-align:left}
 .row.miss .v{color:var(--danger);font-style:italic;font-family:'Vazirmatn',sans-serif}
 .no-mrz{padding:14px 16px;color:var(--muted);font-size:13px}
@@ -147,8 +147,8 @@ body{
 .block{padding:14px 16px;border-top:1px solid var(--line)}
 .block h4{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:6px}
 .mrz{
-  font-family:var(--mono);font-size:12.5px;letter-spacing:1px;
-  background:var(--indigo-soft);color:var(--indigo-deep);border-radius:10px;padding:12px 14px;
+  font-family:var(--mono);font-size:13px;letter-spacing:1px;line-height:1.9;
+  background:var(--indigo-soft);color:var(--indigo-deep);border-radius:10px;padding:14px 16px;
   white-space:pre;overflow-x:auto;direction:ltr;text-align:left;
 }
 details.raw summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--muted);list-style:none}
@@ -165,8 +165,8 @@ textarea.rawtext{
 /* actions */
 .actions{display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-top:1px solid var(--line)}
 button.btn{
-  font-family:inherit;font-weight:700;font-size:13.5px;cursor:pointer;
-  border-radius:11px;padding:10px 18px;border:1px solid var(--line);
+  font-family:inherit;font-weight:700;font-size:14.5px;cursor:pointer;
+  border-radius:11px;padding:11px 18px;border:1px solid var(--line);
   background:#fff;color:var(--ink);transition:transform .05s ease, background .15s ease, border-color .15s ease;
 }
 button.btn:hover{border-color:#c9c8e8}
@@ -468,6 +468,8 @@ function parseLabeled(text){
   const date  = (re)=>{ const m = text.match(re); return m ? m[1].replace(/[.\-]/g,'/') : ''; };
 
   f.name        = after(/Name\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{2,60})/);
+  f.surname     = after(/(?:Surname|Family Name)\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{1,40})/);
+  f.given       = after(/(?:Given Names?|Forename|First Name)\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{1,40})/);
   f.nationality = after(/Nationality\s*[:\/]?\s*([A-Za-z][A-Za-z ()'’\-]{2,40})/);
   f.occupation  = after(/Occupation\s*[:\/]?\s*([A-Za-z][A-Za-z .'’&\-]{2,40})/);
   f.issue_place = after(/Issuing Place\s*[:\/]?\s*([A-Za-z][A-Za-z .'’\-]{2,30})/);
@@ -496,9 +498,11 @@ function mergeFields(mrz, raw){
   const t = parseLabeled(raw);
   const f = {};
   f.doc_type    = m.doc_type || docTypeFromText(raw) || '';
-  f.full_name   = t.name || [m.surname, m.given].filter(Boolean).join(' ');
-  f.surname     = m.surname || '';
-  f.given       = m.given || '';
+  f.surname     = m.surname || t.surname || '';
+  f.given       = m.given   || t.given   || '';
+  const mrzFull = [m.surname, m.given].filter(Boolean).join(' ');
+  const labFull = [t.surname, t.given].filter(Boolean).join(' ') || t.name;
+  f.full_name   = mrzFull || labFull || '';
   f.number      = m.number || t.passport || '';
   f.nationality = m.nationality || t.nationality || '';
   f.issuer      = m.issuer || '';
@@ -513,20 +517,8 @@ function mergeFields(mrz, raw){
 }
 
 /* ---------- rendering ---------- */
-// always shown (marked "not found" when empty)
-const CORE_FIELDS = [
-  ['doc_type','نوع سند'],
-  ['full_name','نام کامل'],
-  ['number','شماره سند'],
-  ['nationality','ملیت'],
-  ['dob','تاریخ تولد'],
-  ['sex','جنسیت'],
-  ['expiry','تاریخ انقضا'],
-];
 // shown only when a value exists
 const EXTRA_FIELDS = [
-  ['surname','نام خانوادگی'],
-  ['given','نام'],
   ['issuer','کشور صادرکننده'],
   ['issue_date','تاریخ صدور'],
   ['issue_place','محل صدور'],
@@ -535,10 +527,21 @@ const EXTRA_FIELDS = [
 ];
 
 function displayFields(fields){
-  // skip surname/given if we already have a full name
-  const skip = fields.full_name ? new Set(['surname','given']) : new Set();
-  const core = CORE_FIELDS;
-  const extra = EXTRA_FIELDS.filter(([k])=> !skip.has(k) && fields[k] && String(fields[k]).trim());
+  // passports/MRZ give surname + given separately → show both;
+  // a single printed name (e.g. Emirates ID) → show one combined "full name"
+  const nameRows = (fields.surname || fields.given)
+    ? [['surname','نام خانوادگی'], ['given','نام']]
+    : [['full_name','نام کامل']];
+  const core = [
+    ['doc_type','نوع سند'],
+    ...nameRows,
+    ['number','شماره سند'],
+    ['nationality','ملیت'],
+    ['dob','تاریخ تولد'],
+    ['sex','جنسیت'],
+    ['expiry','تاریخ انقضا'],
+  ];
+  const extra = EXTRA_FIELDS.filter(([k])=> fields[k] && String(fields[k]).trim());
   return {core, extra};
 }
 
