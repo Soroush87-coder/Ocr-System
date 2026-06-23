@@ -293,7 +293,7 @@ let currentBar = null;
 
 /* draw an image source onto a canvas, lightly cleaned up for OCR */
 function prepCanvas(source, w, h){
-  const MAX = 2200;
+  const MAX = 3200;
   let scale = 1;
   if (Math.max(w,h) > MAX) scale = MAX / Math.max(w,h);
   const cw = Math.round(w*scale), ch = Math.round(h*scale);
@@ -313,6 +313,41 @@ function prepCanvas(source, w, h){
     }
     ctx.putImageData(img,0,0);
   }catch(e){/* tainted canvas etc. — keep original */}
+  return c;
+}
+
+function cloneCanvas(source){
+  const c = document.createElement('canvas');
+  c.width = source.width; c.height = source.height;
+  c.getContext('2d').drawImage(source, 0, 0);
+  return c;
+}
+
+function cropCanvas(source, x, y, w, h, scale=1){
+  const sx = Math.max(0, Math.round(source.width*x));
+  const sy = Math.max(0, Math.round(source.height*y));
+  const sw = Math.min(source.width-sx, Math.round(source.width*w));
+  const sh = Math.min(source.height-sy, Math.round(source.height*h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(sw*scale));
+  c.height = Math.max(1, Math.round(sh*scale));
+  c.getContext('2d').drawImage(source, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+
+function thresholdCanvas(source){
+  const c = cloneCanvas(source);
+  const ctx = c.getContext('2d');
+  try{
+    const img = ctx.getImageData(0,0,c.width,c.height);
+    const d = img.data;
+    for (let i=0;i<d.length;i+=4){
+      const g = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+      const v = g > 150 ? 255 : 0;
+      d[i]=d[i+1]=d[i+2]=v;
+    }
+    ctx.putImageData(img,0,0);
+  }catch(e){}
   return c;
 }
 
@@ -376,13 +411,13 @@ function findMrz(text){
   const mrzish = lines.filter(l=>{
     if(!/^[A-Z0-9<]+$/.test(l)) return false;
     const len=l.length;
-    const inWin = (len>=40&&len<=46) || (len>=28&&len<=34);
+    const inWin = (len>=30&&len<=48) || (len>=24&&len<=34);
     const digits=(l.match(/\d/g)||[]).length;
     return inWin && (l.includes('<') || digits>=5);
   });
 
-  const l44 = mrzish.filter(l=>l.length>=40&&l.length<=46);
-  const l30 = mrzish.filter(l=>l.length>=28&&l.length<=34);
+  const l44 = mrzish.filter(l=>l.length>=30&&l.length<=48);
+  const l30 = mrzish.filter(l=>l.length>=24&&l.length<=34);
 
   // --- TD3 (passport / visa): 2 lines of 44 ---
   if (l44.length>=2){
@@ -463,7 +498,7 @@ function parseTD3Line2(b){
   const out = {};
   const m = b.match(/([A-Z]{3})([0-9OISBZ]{6})[0-9OISBZ]([MFX<])([0-9OISBZ]{6})/);
   if (m){
-    out.number = b.slice(0, m.index).replace(/[^A-Z0-9]/g,'');
+    out.number = b.slice(0, 9).replace(/</g,'').replace(/[^A-Z0-9]/g,'');
     out.nationality = ctry(m[1]);
     out.dob = ymd(m[2], false);
     out.sex = sex(m[3]==='<'?'':m[3]);
@@ -691,15 +726,15 @@ function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
      <div class="preview-zone" id="pv"></div>
      ${rows}
      ${mrz?`<div class="block"><h4>MRZ — ناحیه ماشین‌خوان</h4><div class="mrz">${esc(mrz.lines.join('\n'))}</div></div>`:''}
-     ${hasAny?'':`<div class="block">
+     <div class="block">
        <details class="raw"><summary>متن کامل OCR</summary>
          <textarea class="rawtext" readonly>${esc(raw)}</textarea>
        </details>
-     </div>`}
+     </div>
      <div class="actions">
        <button class="btn primary" data-act="copy">کپی اطلاعات</button>
        <button class="btn" data-act="download">دانلود فایل متنی</button>
-       ${hasAny?'':`<button class="btn" data-act="copyraw">کپی متن خام</button>`}
+       <button class="btn" data-act="copyraw">کپی متن خام</button>
      </div>`;
 
   // attach the preview canvas (downscaled for display)
@@ -722,6 +757,47 @@ function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
 }
 
 /* ---------- per-file pipeline ---------- */
+async function recognizeCanvas(w, canvas, params){
+  await w.setParameters(params);
+  const { data } = await w.recognize(canvas);
+  return data.text || '';
+}
+
+function makeMrzCrops(canvas){
+  const bottom = cropCanvas(canvas, 0, 0.54, 1, 0.46, 1.6);
+  const lower = cropCanvas(canvas, 0, 0.66, 1, 0.34, 2.0);
+  return [bottom, thresholdCanvas(bottom), lower, thresholdCanvas(lower)];
+}
+
+async function recognizeDocument(w, canvases){
+  const chunks = [];
+  const normalParams = {
+    tessedit_pageseg_mode: '6',
+    preserve_interword_spaces: '1',
+    tessedit_char_whitelist: ''
+  };
+  const mrzParams = {
+    tessedit_pageseg_mode: '6',
+    preserve_interword_spaces: '1',
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+  };
+
+  for (const c of canvases){
+    chunks.push(await recognizeCanvas(w, c, normalParams));
+  }
+
+  for (const c of canvases){
+    for (const crop of makeMrzCrops(c)){
+      chunks.push(await recognizeCanvas(w, crop, mrzParams));
+    }
+  }
+
+  return chunks
+    .map(t => String(t || '').replace(/[ \t]+\n/g,'\n').trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 async function processFile(file){
   const card = document.createElement('div');
   card.className = 'card';
@@ -738,12 +814,7 @@ async function processFile(file){
     const canvases = isPdf ? await loadPdfFile(file) : [await loadImageFile(file)];
 
     const w = await getWorker();
-    let raw = '';
-    for (const c of canvases){
-      const { data } = await w.recognize(c);
-      raw += (raw?'\n\n':'') + data.text;
-    }
-    raw = raw.replace(/[ \t]+\n/g,'\n').trim();
+    const raw = (await recognizeDocument(w, canvases)).replace(/[ \t]+\n/g,'\n').trim();
 
     const mrz = findMrz(raw);
     const fields = mergeFields(mrz, raw);
