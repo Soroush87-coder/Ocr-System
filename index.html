@@ -532,12 +532,42 @@ function cleanFieldValue(s){
 }
 function normalizeDate(s){
   s = fixDigits(String(s || '').replace(/[^\d.\-\/]/g, ''));
+  if (/^\d{8,9}$/.test(s)){
+    const compact = s.length === 9 ? s.slice(0,4) + s.slice(-4) : s;
+    const dd = compact.slice(0,2), mm = compact.slice(2,4), yyyy = compact.slice(4,8);
+    if (+dd >= 1 && +dd <= 31 && +mm >= 1 && +mm <= 12) return `${dd}/${mm}/${yyyy}`;
+  }
   const m = s.match(/^(\d{1,4})[.\-\/](\d{1,2})[.\-\/](\d{2,4})$/);
   if (!m) return cleanFieldValue(s);
   let a=m[1], b=m[2], c=m[3];
   if (a.length === 4) return `${c.padStart(2,'0')}/${b.padStart(2,'0')}/${a}`;
   if (c.length === 2) c = (+c > 40 ? '19' : '20') + c;
   return `${a.padStart(2,'0')}/${b.padStart(2,'0')}/${c}`;
+}
+function extractNoisyIssueDate(text){
+  const normalized = fixDigits(text).toUpperCase();
+  const patterns = [
+    /\bD[O0][I1L]\s*[:\-]?\s*([0-9]{8,9})\b/g,
+    /\bDATE\s*OF\s*[I1L|]SSUE\s*[:\-]?\s*([0-9]{1,2}[\/.\-][0-9]{1,2}[\/.\-][0-9]{2,4})/g,
+    /\bISSUE\s*DATE\s*[:\-]?\s*([0-9]{1,2}[\/.\-][0-9]{1,2}[\/.\-][0-9]{2,4})/g
+  ];
+  for (const re of patterns){
+    const m = [...normalized.matchAll(re)].find(x => x[1]);
+    if (m) return normalizeDate(m[1]);
+  }
+  return '';
+}
+function extractNoisyPlaceOfBirth(text){
+  const cityWords = ['TEHRAN','DUBAI','SHIRAZ','ISFAHAN','ESFAHAN','MASHHAD','TABRIZ','KARAJ','QOM','YAZD','RASHT','AHVAZ','KERMAN','KISH'];
+  const normalized = text.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ');
+  const pobIndex = normalized.search(/\bP[O0]B\b|PLACE\s+OF\s+BIRTH/);
+  const scope = pobIndex >= 0 ? normalized.slice(pobIndex, pobIndex + 90) : normalized;
+  for (const city of cityWords){
+    if (new RegExp(`S?${city}C?\\b`).test(scope)) return city === 'ESFAHAN' ? 'ISFAHAN' : city;
+  }
+  const m = scope.match(/P[O0]B\s+[A-Z0-9\s]{0,35}([A-Z]{4,20})\b/);
+  if (m && !/^(POB|DATE|BIRTH|SEX|DOE|DOI|DOL)$/.test(m[1])) return m[1].replace(/^S(?=TEHRAN$)/,'');
+  return '';
 }
 
 // TD3 line 2: anchor on nationality(3 letters)+dob+sex+expiry so a dropped/extra OCR char doesn't shift everything
@@ -633,11 +663,12 @@ function parseLabeled(text){
   const birthComboRe = new RegExp(`Date\\s*(?:&|and)\\s*Place\\s*of\\s*Birth\\s*[:;\\-/]?\\s*(${dateValue})\\s*[-–—]\\s*([A-Za-z][A-Za-z .'\\-]{1,40})`, 'i');
   const birthCombo = lines.map(l => l.match(birthComboRe)).find(Boolean);
   f.place_of_birth = birthCombo ? tidyText(birthCombo[2]) : findLabel(['Place\\s*of\\s*Birth','Birth\\s*Place','Country\\s*of\\s*Birth','POB'], textValue);
+  if (!f.place_of_birth) f.place_of_birth = extractNoisyPlaceOfBirth(text);
   f.passport    = findLabel(['Passport\\s*(?:No\\.?|Number)?','Document\\s*(?:No\\.?|Number)'], '[A-Z0-9]*\\d[A-Z0-9]{5,11}');
   f.card_number = findLabel(['ID\\s*(?:No\\.?|Number)','Identity\\s*(?:No\\.?|Number)','Card\\s*(?:No\\.?|Number)'], '[0-9\\- ]{10,25}');
   f.sex         = findLabel(['Sex','Gender'], '\\b[MF]\\b');
   f.dob         = birthCombo ? normalizeDate(birthCombo[1]) : findLabel(['Date\\s*of\\s*Birth','Birth\\s*Date','DOB'], dateValue, {date:true});
-  f.issue_date  = findLabel(['Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue','Date\\s*of\\s*[I1l|]ssue','Date\\s*of\\s*Issu[e3]'], dateValue, {date:true});
+  f.issue_date  = findLabel(['Issuing\\s*Date','Issue\\s*Date','Date\\s*of\\s*Issue','Date\\s*of\\s*[I1l|]ssue','Date\\s*of\\s*Issu[e3]'], dateValue, {date:true}) || extractNoisyIssueDate(text);
   f.expiry      = findLabel(['Expiry\\s*Date','Expire\\s*Date','Expiration\\s*Date','Date\\s*of\\s*Expiry','Valid\\s*Until'], dateValue, {date:true});
   return f;
 }
