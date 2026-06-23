@@ -406,11 +406,29 @@ function findMrz(text){
 }
 function norm(l,n){ l=l.slice(0,n); while(l.length<n) l+='<'; return l; }
 function fixDigits(s){ return s.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2'); }
+// drop OCR-misread filler runs (MRZ pads names with '<', which OCR often reads as LLLL/KKKK)
+function isFiller(t){
+  if (!t) return true;
+  if (/^(.)\1{3,}$/.test(t)) return true;          // 4+ identical chars
+  if (/^[LKC<]{4,}$/.test(t)) return true;         // run of typical '<' misreads
+  const c = {}; for (const ch of t) c[ch]=(c[ch]||0)+1;
+  const max = Math.max.apply(null, Object.values(c));
+  if (t.length>=5 && max/t.length > 0.7) return true; // mostly one repeated letter
+  return false;
+}
+function cleanNameTokens(field){
+  return field.split('<').map(s=>s.trim()).filter(s=> s && !isFiller(s));
+}
 function names(field){
-  const p = field.split('<<');
-  const sur = (p[0]||'').replace(/</g,' ').trim();
-  const giv = (p.slice(1).join(' ')||'').replace(/</g,' ').replace(/\s+/g,' ').trim();
-  return {sur, giv};
+  const dbl = field.indexOf('<<');
+  if (dbl >= 0){
+    const sur = cleanNameTokens(field.slice(0,dbl)).join(' ');
+    const giv = cleanNameTokens(field.slice(dbl+2)).join(' ');
+    return {sur, giv, full:[sur,giv].filter(Boolean).join(' ')};
+  }
+  // no '<<' separator survived OCR → can't split reliably; return cleaned combined name
+  const full = cleanNameTokens(field).join(' ');
+  return {sur:'', giv:'', full};
 }
 function ymd(s, future){
   s = fixDigits(s);
@@ -424,6 +442,26 @@ const COUNTRY = {ARE:'امارات',IRN:'ایران',IRQ:'عراق',TUR:'ترک�
 function ctry(c){ c=c.replace(/</g,''); return COUNTRY[c] ? `${c} (${COUNTRY[c]})` : (c||''); }
 function sex(c){ return c==='M'?'مرد (M)':c==='F'?'زن (F)':''; }
 
+// TD3 line 2: anchor on nationality(3 letters)+dob+sex+expiry so a dropped/extra OCR char doesn't shift everything
+function parseTD3Line2(b){
+  const out = {};
+  const m = b.match(/([A-Z]{3})([0-9OISBZ]{6})[0-9OISBZ]([MFX<])([0-9OISBZ]{6})/);
+  if (m){
+    out.number = b.slice(0, m.index).replace(/[^A-Z0-9]/g,'');
+    out.nationality = ctry(m[1]);
+    out.dob = ymd(m[2], false);
+    out.sex = sex(m[3]==='<'?'':m[3]);
+    out.expiry = ymd(m[4], true);
+  } else {
+    out.number = b.slice(0,9).replace(/</g,'');
+    out.nationality = ctry(b.slice(10,13));
+    out.dob = ymd(b.slice(13,19), false);
+    out.sex = sex(b[20]);
+    out.expiry = ymd(b.slice(21,27), true);
+  }
+  return out;
+}
+
 function parseMrz(mrz){
   const out = {};
   if (mrz.type==='TD3'){
@@ -431,12 +469,10 @@ function parseMrz(mrz){
     out.doc_type = a[0]==='V' ? 'ویزا (MRV)' : 'پاسپورت';
     out.issuer = ctry(a.slice(2,5));
     const nm = names(a.slice(5));
-    out.surname = nm.sur; out.given = nm.giv;
-    out.number = b.slice(0,9).replace(/</g,'').trim();
-    out.nationality = ctry(b.slice(10,13));
-    out.dob = ymd(b.slice(13,19), false);
-    out.sex = sex(b[20]);
-    out.expiry = ymd(b.slice(21,27), true);
+    out.surname = nm.sur; out.given = nm.giv; out.name_combined = nm.full;
+    const l2 = parseTD3Line2(b);
+    out.number = l2.number; out.nationality = l2.nationality;
+    out.dob = l2.dob; out.sex = l2.sex; out.expiry = l2.expiry;
   } else { // TD1
     const a=mrz.lines[0], b=mrz.lines[1], c=mrz.lines[2];
     out.doc_type = 'کارت شناسایی / امارات آیدی';
@@ -447,7 +483,7 @@ function parseMrz(mrz){
     out.expiry = ymd(b.slice(8,14), true);
     out.nationality = ctry(b.slice(15,18));
     const nm = names(c);
-    out.surname = nm.sur; out.given = nm.giv;
+    out.surname = nm.sur; out.given = nm.giv; out.name_combined = nm.full;
   }
   return out;
 }
@@ -502,7 +538,7 @@ function mergeFields(mrz, raw){
   f.given       = m.given   || t.given   || '';
   const mrzFull = [m.surname, m.given].filter(Boolean).join(' ');
   const labFull = [t.surname, t.given].filter(Boolean).join(' ') || t.name;
-  f.full_name   = mrzFull || labFull || '';
+  f.full_name   = mrzFull || m.name_combined || labFull || '';
   f.number      = m.number || t.passport || '';
   f.nationality = m.nationality || t.nationality || '';
   f.issuer      = m.issuer || '';
