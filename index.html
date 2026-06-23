@@ -3,169 +3,196 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>سند‌خوان — Travel Market</title>
+<title>Look Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Vazirmatn:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ink:#12203a;
-  --ink-soft:#41506b;
-  --paper:#e9edf2;
+  --ink:#1b1830;
+  --muted:#6b7280;
+  --bg:#efedfb;
   --surface:#ffffff;
-  --line:#d7deea;
-  --accent:#0d7a5f;
-  --accent-soft:#e3f3ec;
-  --stamp:#b4541f;
-  --danger:#b0413e;
-  --radius:16px;
+  --line:#e7e8f1;
+  --field:#f7f7fc;
+  --indigo:#4f46e5;
+  --indigo-deep:#4338ca;
+  --indigo-soft:#eeedfd;
+  --danger:#c0392b;
   --mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
   font-family:'Vazirmatn', system-ui, sans-serif;
-  background:
-    radial-gradient(900px 500px at 100% -10%, #eaf4ef 0%, transparent 60%),
-    var(--paper);
+  background:var(--bg);
   color:var(--ink);
   min-height:100dvh;
   line-height:1.7;
   -webkit-font-smoothing:antialiased;
 }
-.wrap{max-width:920px;margin:0 auto;padding:28px 18px 80px}
+.page{max-width:1060px;margin:0 auto;padding:26px 18px 48px}
 
-header.top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-.logo{
-  width:42px;height:42px;border-radius:12px;flex:none;
-  background:linear-gradient(135deg,var(--ink),#24406b);
-  display:grid;place-items:center;color:#fff;font-weight:900;font-size:20px;
-  box-shadow:0 6px 18px rgba(18,32,58,.18);
+/* shell: white rounded card with two panels */
+.shell{
+  background:var(--surface);
+  border-radius:30px;
+  padding:16px;
+  display:grid;
+  grid-template-columns:0.82fr 1fr;
+  gap:16px;
+  direction:ltr;
+  box-shadow:0 32px 70px -28px rgba(58,46,140,.40), 0 4px 14px rgba(58,46,140,.06);
 }
-.top h1{font-size:20px;font-weight:900;margin:0;letter-spacing:-.2px}
-.top .sub{font-size:13px;color:var(--ink-soft);margin:0}
 
-.privacy{
+/* ---- left gradient hero ---- */
+.hero{
+  position:sticky;top:26px;align-self:start;
+  min-height:560px;
+  border-radius:20px;
+  padding:26px;
+  color:#fff;
+  display:flex;flex-direction:column;justify-content:space-between;
+  overflow:hidden;
+  background:
+    radial-gradient(120% 110% at 12% 16%, #66d0ff 0%, rgba(102,208,255,0) 42%),
+    radial-gradient(120% 120% at 34% 52%, #2a1f8c 0%, rgba(42,31,140,0) 56%),
+    linear-gradient(140deg, #5b8def 0%, #4f46e5 42%, #8b7bf0 78%, #c8c2f6 100%);
+}
+.ast{width:1em;height:1em;display:block}
+.hero .mark{color:#fff;font-size:30px;opacity:.96}
+.hero-text{direction:rtl;text-align:right}
+.hero .eyebrow{margin:0 0 8px;font-size:14px;font-weight:500;opacity:.9}
+.hero h2{margin:0 0 16px;font-size:25px;line-height:1.5;font-weight:800;letter-spacing:-.2px}
+.hero .privacy{
   display:inline-flex;align-items:center;gap:7px;
-  background:var(--accent-soft);color:var(--accent);
-  font-size:12.5px;font-weight:500;
-  padding:7px 12px;border-radius:999px;margin:14px 0 22px;
+  background:rgba(255,255,255,.16);backdrop-filter:blur(4px);
+  font-size:12px;font-weight:500;padding:7px 12px;border-radius:999px;
 }
-.privacy b{font-weight:700}
+
+/* ---- right working panel ---- */
+.work{direction:rtl;padding:14px 14px 6px;min-width:0}
+.brand{display:flex;align-items:flex-start;gap:12px;margin-bottom:22px}
+.brand .mark{color:var(--indigo);font-size:24px;margin-top:4px}
+.brand h1{margin:0;font-family:'Inter',sans-serif;font-weight:800;font-size:27px;letter-spacing:-.5px;color:var(--ink)}
+.brand .tagline{margin:2px 0 0;font-size:13.5px;color:var(--muted)}
 
 /* drop zone */
 .drop{
-  position:relative;
-  background:var(--surface);
-  border:2px dashed var(--line);
-  border-radius:var(--radius);
-  padding:38px 22px;
-  text-align:center;
-  cursor:pointer;
-  transition:border-color .15s ease, background .15s ease, transform .05s ease;
+  position:relative;display:block;
+  background:var(--field);
+  border:1.5px dashed #c9c8e8;
+  border-radius:16px;
+  padding:34px 22px;
+  text-align:center;cursor:pointer;
+  transition:border-color .15s ease, background .15s ease;
 }
-.drop:hover{border-color:var(--accent)}
-.drop.drag{border-color:var(--accent);background:var(--accent-soft)}
-.drop .ic{font-size:34px;line-height:1}
-.drop .big{font-weight:700;margin:10px 0 2px;font-size:16px}
-.drop .small{color:var(--ink-soft);font-size:13px}
+.drop:hover{border-color:var(--indigo);background:var(--indigo-soft)}
+.drop.drag{border-color:var(--indigo);background:var(--indigo-soft)}
+.drop .ic{font-size:30px;line-height:1;color:var(--indigo)}
+.drop .big{font-weight:700;margin:10px 0 2px;font-size:15.5px;color:var(--ink)}
+.drop .small{color:var(--muted);font-size:13px}
 .drop input{display:none}
-.formats{margin-top:14px;font-size:12px;color:var(--ink-soft)}
-.formats span{display:inline-block;background:var(--paper);border:1px solid var(--line);
-  border-radius:6px;padding:2px 8px;margin:0 2px;font-family:var(--mono);font-size:11px}
+.formats{margin-top:14px;font-size:12px}
+.formats span{display:inline-block;background:#fff;border:1px solid var(--line);
+  color:var(--muted);border-radius:6px;padding:2px 8px;margin:2px;font-family:var(--mono);font-size:11px}
 
-.engine{margin:14px 2px 0;font-size:12px;color:var(--ink-soft);min-height:18px}
+.engine{margin:14px 2px 0;font-size:12px;color:var(--muted);min-height:18px}
 
 /* result card */
 .card{
   background:var(--surface);
   border:1px solid var(--line);
-  border-radius:var(--radius);
-  margin-top:20px;
+  border-radius:16px;
+  margin-top:18px;
   overflow:hidden;
-  box-shadow:0 8px 24px rgba(18,32,58,.06);
 }
 .card-head{
   display:flex;align-items:center;gap:12px;
-  padding:14px 16px;border-bottom:1px solid var(--line);
-  background:linear-gradient(0deg,#fbfcfe,#fff);
+  padding:13px 15px;border-bottom:1px solid var(--line);
 }
-.card-head .fname{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.card-head .fname{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .badge{
-  flex:none;font-size:11.5px;font-weight:700;letter-spacing:.3px;
-  padding:4px 10px;border-radius:7px;
-  color:var(--stamp);background:#fbeee6;border:1px solid #f0d2bf;
-  text-transform:uppercase;font-family:var(--mono);
+  flex:none;font-size:11px;font-weight:700;letter-spacing:.2px;
+  padding:4px 10px;border-radius:999px;
+  color:var(--indigo-deep);background:var(--indigo-soft);border:1px solid #d9d6f7;
 }
-.badge.unknown{color:var(--ink-soft);background:var(--paper);border-color:var(--line)}
+.badge.unknown{color:var(--muted);background:#f3f4f8;border-color:var(--line)}
 
 /* preview + scan */
-.preview-zone{position:relative;background:#0d1626;max-height:360px;overflow:hidden;display:grid;place-items:center}
-.preview-zone img,.preview-zone canvas{max-width:100%;max-height:360px;display:block}
+.preview-zone{position:relative;background:#eef0f8;max-height:340px;overflow:hidden;display:grid;place-items:center}
+.preview-zone img,.preview-zone canvas{max-width:100%;max-height:340px;display:block}
 .scanline{
   position:absolute;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,transparent,var(--accent),transparent);
-  box-shadow:0 0 18px 3px rgba(13,122,95,.6);
+  background:linear-gradient(90deg,transparent,var(--indigo),transparent);
+  box-shadow:0 0 18px 3px rgba(79,70,229,.55);
   animation:scan 1.6s ease-in-out infinite;
 }
 @keyframes scan{0%{top:4%}50%{top:96%}100%{top:4%}}
-.proc{
-  padding:18px 16px;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--ink-soft);
-}
-.bar{flex:1;height:6px;background:var(--paper);border-radius:999px;overflow:hidden}
-.bar > i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .2s ease}
+.proc{padding:18px 16px;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
+.bar{flex:1;height:6px;background:#edecf6;border-radius:999px;overflow:hidden}
+.bar > i{display:block;height:100%;width:0;background:var(--indigo);border-radius:999px;transition:width .2s ease}
 
 /* fields table */
 .fields{padding:6px 16px 4px}
-.row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #eef1f6}
+.row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f1f1f7}
 .row:last-child{border-bottom:0}
-.row .k{flex:none;width:148px;color:var(--ink-soft);font-size:13px;font-weight:500}
+.row .k{flex:none;width:140px;color:var(--muted);font-size:13px;font-weight:500}
 .row .v{flex:1;font-family:var(--mono);font-size:13.5px;font-weight:500;color:var(--ink);word-break:break-word}
 .row .v[dir="ltr"]{text-align:left}
 .row.miss .v{color:var(--danger);font-style:italic;font-family:'Vazirmatn',sans-serif}
-.no-mrz{padding:12px 16px;color:var(--ink-soft);font-size:13px}
+.no-mrz{padding:14px 16px;color:var(--muted);font-size:13px}
 
 /* MRZ + raw blocks */
 .block{padding:14px 16px;border-top:1px solid var(--line)}
-.block h4{margin:0 0 8px;font-size:12.5px;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
+.block h4{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:6px}
 .mrz{
   font-family:var(--mono);font-size:12.5px;letter-spacing:1px;
-  background:#0d1626;color:#cfe9df;border-radius:10px;padding:12px 14px;
+  background:var(--indigo-soft);color:var(--indigo-deep);border-radius:10px;padding:12px 14px;
   white-space:pre;overflow-x:auto;direction:ltr;text-align:left;
 }
-details.raw summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink-soft);list-style:none}
+details.raw summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--muted);list-style:none}
 details.raw summary::-webkit-details-marker{display:none}
-details.raw summary::before{content:'▸ ';color:var(--accent)}
+details.raw summary::before{content:'▸ ';color:var(--indigo)}
 details.raw[open] summary::before{content:'▾ '}
 textarea.rawtext{
   width:100%;margin-top:10px;min-height:150px;resize:vertical;
   font-family:var(--mono);font-size:12.5px;line-height:1.6;
-  background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:12px;
+  background:var(--field);border:1px solid var(--line);border-radius:10px;padding:12px;
   direction:ltr;text-align:left;color:var(--ink);
 }
 
 /* actions */
-.actions{display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-top:1px solid var(--line);background:#fbfcfe}
+.actions{display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-top:1px solid var(--line)}
 button.btn{
   font-family:inherit;font-weight:700;font-size:13.5px;cursor:pointer;
-  border-radius:10px;padding:10px 16px;border:1px solid var(--line);
-  background:#fff;color:var(--ink);transition:transform .05s ease, background .15s ease;
+  border-radius:11px;padding:10px 18px;border:1px solid var(--line);
+  background:#fff;color:var(--ink);transition:transform .05s ease, background .15s ease, border-color .15s ease;
 }
+button.btn:hover{border-color:#c9c8e8}
 button.btn:active{transform:translateY(1px)}
-button.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-button.btn.primary:hover{background:#0a6650}
+button.btn.primary{background:var(--indigo);color:#fff;border-color:var(--indigo)}
+button.btn.primary:hover{background:var(--indigo-deep);border-color:var(--indigo-deep)}
 button.btn:disabled{opacity:.5;cursor:default}
+
 .toast{
   position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
   background:var(--ink);color:#fff;padding:11px 20px;border-radius:999px;font-size:13.5px;font-weight:500;
   opacity:0;pointer-events:none;transition:.25s ease;z-index:50;
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-footer{text-align:center;color:var(--ink-soft);font-size:12px;margin-top:34px}
+.foot{text-align:center;color:#9a98b5;font-size:12px;margin-top:22px}
 
-@media (max-width:560px){
+@media (max-width:760px){
+  .shell{grid-template-columns:1fr;border-radius:24px}
+  .hero{position:static;min-height:0;padding:22px}
+  .hero h2{font-size:21px}
+  .hero .mark{margin-bottom:26px}
+}
+@media (max-width:520px){
   .row{flex-direction:column;gap:2px}
   .row .k{width:auto}
+  .actions button.btn{flex:1}
 }
 @media (prefers-reduced-motion:reduce){
   .scanline{animation:none;top:50%}
@@ -173,31 +200,49 @@ footer{text-align:center;color:var(--ink-soft);font-size:12px;margin-top:34px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <div class="logo">س</div>
-    <div>
-      <h1>سند‌خوان</h1>
-      <p class="sub">استخراج خودکار اطلاعات از پاسپورت، امارات آیدی و ویزا</p>
-    </div>
-  </header>
+<div class="page">
+  <main class="shell">
 
-  <div class="privacy">🔒 <span><b>کاملاً آفلاین:</b> پردازش داخل مرورگر شما انجام می‌شود؛ هیچ فایلی به سرور ارسال نمی‌شود.</span></div>
+    <!-- left gradient hero -->
+    <aside class="hero">
+      <div class="mark">
+        <svg class="ast" viewBox="0 0 24 24" fill="none"><path d="M12 2.5v19M2.5 12h19M5.2 5.2l13.6 13.6M18.8 5.2L5.2 18.8" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg>
+      </div>
+      <div class="hero-text">
+        <p class="eyebrow">به‌سادگی</p>
+        <h2>اطلاعات هر پاسپورت، امارات‌آیدی و ویزا را تمیز و فوری استخراج کن</h2>
+        <span class="privacy">🔒 همه‌چیز داخل مرورگر شما پردازش می‌شود</span>
+      </div>
+    </aside>
 
-  <label class="drop" id="drop">
-    <input type="file" id="file" accept="image/*,.heic,.heif,.pdf,application/pdf" multiple>
-    <div class="ic">📄</div>
-    <div class="big">عکس یا PDF را اینجا رها کنید</div>
-    <div class="small">یا برای انتخاب فایل کلیک کنید — می‌توانید چند فایل را با هم اضافه کنید</div>
-    <div class="formats">
-      <span>JPG</span><span>PNG</span><span>PDF</span><span>HEIC</span><span>WEBP</span>
-    </div>
-  </label>
-  <div class="engine" id="engine"></div>
+    <!-- right working panel -->
+    <section class="work">
+      <div class="brand">
+        <span class="mark">
+          <svg class="ast" viewBox="0 0 24 24" fill="none"><path d="M12 2.5v19M2.5 12h19M5.2 5.2l13.6 13.6M18.8 5.2L5.2 18.8" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg>
+        </span>
+        <div>
+          <h1>Look Studio</h1>
+          <p class="tagline">سند را آپلود کنید تا اطلاعاتش استخراج شود</p>
+        </div>
+      </div>
 
-  <div id="results"></div>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*,.heic,.heif,.pdf,application/pdf" multiple>
+        <div class="ic">⬆</div>
+        <div class="big">عکس یا PDF را اینجا رها کنید</div>
+        <div class="small">یا برای انتخاب فایل کلیک کنید — می‌توانید چند فایل را با هم اضافه کنید</div>
+        <div class="formats">
+          <span>JPG</span><span>PNG</span><span>PDF</span><span>HEIC</span><span>WEBP</span>
+        </div>
+      </label>
+      <div class="engine" id="engine"></div>
 
-  <footer>پردازش‌گر Tesseract OCR + تشخیص MRZ — ساخته‌شده برای Travel Market</footer>
+      <div id="results"></div>
+    </section>
+
+  </main>
+  <p class="foot">Tesseract OCR + تشخیص MRZ — Look Studio</p>
 </div>
 
 <div class="toast" id="toast"></div>
