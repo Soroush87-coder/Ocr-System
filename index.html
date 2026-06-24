@@ -1058,7 +1058,6 @@ function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
      <div class="actions">
        <button class="btn primary" data-act="copy">کپی اطلاعات</button>
        <button class="btn" data-act="download">دانلود فایل متنی</button>
-       <button class="btn" data-act="copyraw">کپی متن خام</button>
      </div>`;
 
   // attach the preview canvas (downscaled for display)
@@ -1067,8 +1066,6 @@ function renderCard(card, fileName, previewCanvas, fields, mrz, raw){
   pv.appendChild(previewCanvas);
 
   card.querySelector('[data-act="copy"]').onclick = ()=>{ navigator.clipboard.writeText(txt); toast('اطلاعات کپی شد'); };
-  const cr = card.querySelector('[data-act="copyraw"]');
-  if (cr) cr.onclick = ()=>{ navigator.clipboard.writeText(raw); toast('متن خام کپی شد'); };
   card.querySelector('[data-act="download"]').onclick = ()=>{
     const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
     const a = document.createElement('a');
