@@ -99,6 +99,22 @@ body{
 
 .engine{margin:14px 2px 0;font-size:12px;color:var(--muted);min-height:18px}
 
+/* AI mode box */
+.aibox{margin:12px 2px 0;border:1px solid var(--line);border-radius:14px;background:var(--field);overflow:hidden}
+.aibox > summary{cursor:pointer;list-style:none;padding:12px 14px;font-size:13.5px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px}
+.aibox > summary::-webkit-details-marker{display:none}
+.aibox .aidot{width:8px;height:8px;border-radius:50%;background:#c9c8e8;flex:none}
+.aibox[open] .aidot{background:var(--indigo)}
+.aibox .aitag{margin-inline-start:auto;font-size:11px;font-weight:700;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+.aibody{padding:2px 14px 14px}
+.ainote{margin:0 0 12px;font-size:12.5px;color:var(--muted);line-height:1.8}
+.aiswitch{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:500;color:var(--ink);margin:8px 0;cursor:pointer}
+.aiswitch.small{font-size:12.5px;color:var(--muted);font-weight:500}
+.aiswitch input{width:16px;height:16px;accent-color:var(--indigo);cursor:pointer}
+.aikey{width:100%;font-family:var(--mono);font-size:13px;direction:ltr;text-align:left;
+  background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--ink);margin:4px 0}
+.aikey:focus{outline:none;border-color:var(--indigo)}
+
 /* result card */
 .card{
   background:var(--surface);
@@ -238,11 +254,21 @@ button.btn:disabled{opacity:.5;cursor:default}
       </label>
       <div class="engine" id="engine"></div>
 
+      <details class="aibox" id="aibox">
+        <summary><span class="aidot"></span> حالت دقیق با هوش مصنوعی <span class="aitag">اختیاری</span></summary>
+        <div class="aibody">
+          <p class="ainote">دقیق‌ترین حالت برای پاسپورت، اقامه و امارات‌آیدی. کلید Anthropic خودت رو وارد کن؛ در این حالت تصویرِ سند برای استخراج به Claude فرستاده می‌شود (به‌جای پردازش داخل مرورگر). اگر خاموش باشد، همه‌چیز ۱۰۰٪ داخل مرورگر پردازش می‌شود.</p>
+          <label class="aiswitch"><input type="checkbox" id="aiOn"> فعال‌سازی حالت هوش مصنوعی</label>
+          <input type="password" id="aiKey" class="aikey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+          <label class="aiswitch small"><input type="checkbox" id="aiRemember"> ذخیره‌ی کلید روی این مرورگر</label>
+        </div>
+      </details>
+
       <div id="results"></div>
     </section>
 
   </main>
-  <p class="foot">Tesseract OCR + تشخیص MRZ — Look Studio</p>
+  <p class="foot">موتور OCR پیشرفته + تشخیص MRZ (با اعتبارسنجی رقم کنترل) — Look Studio</p>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -291,23 +317,48 @@ async function getWorker(){
 }
 let currentBar = null;
 
-/* draw an image source onto a canvas, lightly cleaned up for OCR */
+/* draw an image source onto a canvas, cleaned up for OCR.
+   Tesseract reads best when capital letters are ~25–35px tall, so we both
+   cap huge photos AND upscale small ones (screenshots, tight crops). */
 function prepCanvas(source, w, h){
-  const MAX = 3200;
+  const MAX = 3400;      // don't feed gigantic images (slow, no accuracy gain)
+  const MIN_LONG = 1800; // upscale anything smaller so text is legible to OCR
   let scale = 1;
-  if (Math.max(w,h) > MAX) scale = MAX / Math.max(w,h);
-  const cw = Math.round(w*scale), ch = Math.round(h*scale);
+  const longSide = Math.max(w,h);
+  if (longSide > MAX) scale = MAX / longSide;
+  else if (longSide < MIN_LONG) scale = Math.min(2.6, MIN_LONG / longSide);
+
+  const cw = Math.max(1, Math.round(w*scale)), ch = Math.max(1, Math.round(h*scale));
   const c = document.createElement('canvas');
   c.width = cw; c.height = ch;
   const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, 0, cw, ch);
-  // grayscale + mild contrast — helps OCR on phone photos
+
+  // grayscale + gentle contrast stretch. We DON'T binarize the full page here —
+  // Tesseract's own binarizer does better on clean grayscale; we binarize only
+  // the MRZ crops (where a hard threshold actually helps).
   try{
     const img = ctx.getImageData(0,0,cw,ch);
-    const d = img.data, k = 1.25, m = 128*(1-k);
-    for (let i=0;i<d.length;i+=4){
-      let g = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
-      g = g*k + m;
+    const d = img.data;
+    // first pass: luminance + collect a rough min/max for a light auto-levels
+    let lo = 255, hi = 0;
+    const lum = new Uint8ClampedArray(cw*ch);
+    for (let i=0,j=0;i<d.length;i+=4,j++){
+      const g = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
+      lum[j] = g;
+      if (g < lo) lo = g;
+      if (g > hi) hi = g;
+    }
+    // clamp the auto-levels window so we never over-stretch noisy photos
+    lo = Math.min(lo + 6, 90);
+    hi = Math.max(hi - 6, 165);
+    const span = Math.max(1, hi - lo);
+    const k = 1.18, mid = 128*(1-k);
+    for (let i=0,j=0;i<d.length;i+=4,j++){
+      let g = (lum[j]-lo) * 255 / span;        // auto-levels
+      g = g*k + mid;                            // mild contrast
       g = g<0?0:g>255?255:g;
       d[i]=d[i+1]=d[i+2]=g;
     }
@@ -335,19 +386,57 @@ function cropCanvas(source, x, y, w, h, scale=1){
   return c;
 }
 
-function thresholdCanvas(source){
+/* Otsu's method: find the global threshold that best separates ink from paper.
+   Far more robust across lighting than a hard-coded value. */
+function otsuThreshold(lum){
+  const hist = new Array(256).fill(0);
+  for (let i=0;i<lum.length;i++) hist[lum[i]]++;
+  const total = lum.length;
+  let sum = 0; for (let t=0;t<256;t++) sum += t*hist[t];
+  let sumB=0, wB=0, varMax=0, thr=127;
+  for (let t=0;t<256;t++){
+    wB += hist[t]; if (wB===0) continue;
+    const wF = total - wB; if (wF===0) break;
+    sumB += t*hist[t];
+    const mB = sumB/wB, mF = (sum-sumB)/wF;
+    const between = wB*wF*(mB-mF)*(mB-mF);
+    if (between > varMax){ varMax = between; thr = t; }
+  }
+  return thr;
+}
+
+/* binarize a canvas to crisp black/white using Otsu (+optional bias).
+   Used for MRZ crops, where a hard threshold genuinely helps OCR. */
+function binarizeCanvas(source, bias=0){
   const c = cloneCanvas(source);
   const ctx = c.getContext('2d');
   try{
     const img = ctx.getImageData(0,0,c.width,c.height);
     const d = img.data;
-    for (let i=0;i<d.length;i+=4){
-      const g = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
-      const v = g > 150 ? 255 : 0;
+    const lum = new Uint8ClampedArray(c.width*c.height);
+    for (let i=0,j=0;i<d.length;i+=4,j++){
+      lum[j] = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
+    }
+    const thr = Math.max(0, Math.min(255, otsuThreshold(lum) + bias));
+    for (let i=0,j=0;i<d.length;i+=4,j++){
+      const v = lum[j] > thr ? 255 : 0;
       d[i]=d[i+1]=d[i+2]=v;
     }
     ctx.putImageData(img,0,0);
   }catch(e){}
+  return c;
+}
+// kept for backward-compat with any caller
+function thresholdCanvas(source){ return binarizeCanvas(source); }
+
+/* rotate a canvas 180° — for MRZ that was photographed upside down */
+function rotate180(src){
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width, c.height);
+  ctx.rotate(Math.PI);
+  ctx.drawImage(src, 0, 0);
   return c;
 }
 
@@ -881,7 +970,9 @@ const FIELD_SETS = {
 
 function displayFields(fields){
   const core = FIELD_SETS[fields.document_kind] || FIELD_SETS.generic;
-  return {core, extra:[]};
+  const extra = [];
+  if (fields.arabic_name && String(fields.arabic_name).trim()) extra.push(['arabic_name','الاسم (نام عربی)']);
+  return {core, extra};
 }
 
 function buildTextOutput(fileName, fields, mrz, raw){
@@ -969,39 +1060,160 @@ async function recognizeCanvas(w, canvas, params){
   return data.text || '';
 }
 
+const LATIN_WL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/.:,()&<> ';
+const MRZ_WL   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
+
+/* MRZ sits in the bottom third. We try several bands, upscale them, and feed
+   both grayscale and a crisp Otsu-binarized version. */
 function makeMrzCrops(canvas){
-  const bottom = cropCanvas(canvas, 0, 0.54, 1, 0.46, 1.6);
-  const lower = cropCanvas(canvas, 0, 0.66, 1, 0.34, 2.0);
-  return [bottom, thresholdCanvas(bottom), lower, thresholdCanvas(lower)];
+  const crops = [];
+  const bands = [[0.50,0.50],[0.60,0.40],[0.68,0.32],[0.74,0.26]];
+  for (const [y,h] of bands){
+    // pick an upscale factor so the band lands near OCR's sweet spot
+    const bandW = canvas.width;
+    const scale = bandW < 1400 ? 2.4 : bandW < 2200 ? 1.7 : 1.2;
+    const base = cropCanvas(canvas, 0, y, 1, h, scale);
+    crops.push(base);
+    crops.push(binarizeCanvas(base));
+  }
+  return crops;
+}
+
+/* full printed text: run two page-segmentation modes and merge.
+   PSM 3 reads structured label/value layouts; PSM 11 catches sparse/scattered text. */
+async function recognizeFullText(w, canvases){
+  const out = [];
+  const modes = [
+    { tessedit_pageseg_mode:'3',  preserve_interword_spaces:'1', tessedit_char_whitelist: LATIN_WL },
+    { tessedit_pageseg_mode:'11', preserve_interword_spaces:'1', tessedit_char_whitelist: LATIN_WL },
+  ];
+  for (const c of canvases){
+    for (const p of modes){ out.push(await recognizeCanvas(w, c, p)); }
+  }
+  return out.join('\n\n');
+}
+
+function mrzLooksValid(mrz){
+  if (!mrz) return false;
+  try{ const f = parseMrz(mrz); return Boolean(f.number && f.dob && f.expiry); }
+  catch(_){ return false; }
+}
+
+/* MRZ text: scan crops; if no check-digit-valid MRZ emerges, retry upside down. */
+async function recognizeMrz(w, canvases){
+  const mrzParams = { tessedit_pageseg_mode:'6', preserve_interword_spaces:'1', tessedit_char_whitelist: MRZ_WL };
+  const collected = [];
+  for (const c of canvases){
+    for (const crop of makeMrzCrops(c)) collected.push(await recognizeCanvas(w, crop, mrzParams));
+  }
+  if (!mrzLooksValid(findMrz(collected.join('\n')))){
+    for (const c of canvases){
+      const r = rotate180(c);
+      for (const crop of makeMrzCrops(r)) collected.push(await recognizeCanvas(w, crop, mrzParams));
+    }
+  }
+  return collected.join('\n');
 }
 
 async function recognizeDocument(w, canvases){
-  const chunks = [];
-  const normalParams = {
-    tessedit_pageseg_mode: '11',
-    preserve_interword_spaces: '1',
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/.:,()&<> '
-  };
-  const mrzParams = {
-    tessedit_pageseg_mode: '6',
-    preserve_interword_spaces: '1',
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
-  };
-
-  for (const c of canvases){
-    chunks.push(await recognizeCanvas(w, c, normalParams));
-  }
-
-  for (const c of canvases){
-    for (const crop of makeMrzCrops(c)){
-      chunks.push(await recognizeCanvas(w, crop, mrzParams));
-    }
-  }
-
-  return chunks
+  const full = await recognizeFullText(w, canvases);
+  const mrz  = await recognizeMrz(w, canvases);
+  return [full, mrz]
     .map(t => String(t || '').replace(/[ \t]+\n/g,'\n').trim())
     .filter(Boolean)
     .join('\n\n');
+}
+
+/* ---------- optional AI extraction (Claude vision) ---------- */
+const AI_MODEL = 'claude-sonnet-4-6';
+const aiOnEl = $('#aiOn'), aiKeyEl = $('#aiKey'), aiRememberEl = $('#aiRemember');
+try{
+  const savedKey = localStorage.getItem('ls_ai_key');
+  if (savedKey){ aiKeyEl.value = savedKey; aiRememberEl.checked = true; }
+  if (localStorage.getItem('ls_ai_on') === '1') aiOnEl.checked = true;
+}catch(_){}
+function persistAi(){
+  try{
+    if (aiRememberEl.checked && aiKeyEl.value.trim()) localStorage.setItem('ls_ai_key', aiKeyEl.value.trim());
+    else localStorage.removeItem('ls_ai_key');
+    localStorage.setItem('ls_ai_on', aiOnEl.checked ? '1' : '0');
+  }catch(_){}
+}
+[aiOnEl, aiKeyEl, aiRememberEl].forEach(el => el.addEventListener('change', persistAi));
+aiKeyEl.addEventListener('input', persistAi);
+function aiEnabled(){ return aiOnEl.checked && aiKeyEl.value.trim().length > 10; }
+
+function canvasToJpegBase64(canvas, maxSide=1600, quality=0.85){
+  let c = canvas;
+  const long = Math.max(canvas.width, canvas.height);
+  if (long > maxSide){
+    const s = maxSide/long;
+    c = document.createElement('canvas');
+    c.width = Math.round(canvas.width*s);
+    c.height = Math.round(canvas.height*s);
+    c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
+  }
+  return c.toDataURL('image/jpeg', quality).split(',')[1];
+}
+
+async function extractWithClaude(canvases){
+  const key = aiKeyEl.value.trim();
+  const imgs = canvases.slice(0,3).map(c => ({
+    type:'image',
+    source:{ type:'base64', media_type:'image/jpeg', data: canvasToJpegBase64(c) }
+  }));
+  const system = 'You are an expert at reading identity and travel documents — passports (including Iranian), UAE Emirates ID, UAE residence visas, and national ID cards in Latin or Arabic script. Transcribe fields exactly as printed; never invent values. Respond with ONLY a JSON object, no markdown fences, no commentary.';
+  const instruction =
+`Read the document image(s) and return a JSON object with EXACTLY these keys (use "" when a field is truly absent):
+{"document_kind":"passport|emirates_id|uae_residence|generic","doc_type":"short Persian label","full_name":"latin full name","given":"given name(s)","surname":"surname","arabic_name":"name in Arabic script or \\"\\"","number":"passport/document number","nationality":"e.g. IRN (ایران)","sex":"مرد (M)|زن (F)|\\"\\"","dob":"DD/MM/YYYY","expiry":"DD/MM/YYYY","issue_date":"DD/MM/YYYY","issue_place":"","place_of_birth":"","occupation":"","company_name":"sponsor/company/employer","emirates_id":"784-YYYY-NNNNNNN-N or \\"\\"","uid_number":"","file_number":"e.g. 201/2024/..."}
+All dates MUST be DD/MM/YYYY. If a value is printed in both Latin and Arabic, put Latin in its field and the full Arabic name in arabic_name. Output JSON only.`;
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key': key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify({
+      model: AI_MODEL,
+      max_tokens: 1024,
+      system,
+      messages: [{ role:'user', content: [...imgs, { type:'text', text: instruction }] }]
+    })
+  });
+  if (!res.ok){
+    let detail=''; try{ detail = (await res.json()).error?.message || ''; }catch(_){}
+    throw new Error('AI ' + res.status + (detail ? ': ' + detail : ''));
+  }
+  const data = await res.json();
+  const text = (data.content || []).filter(b => b.type==='text').map(b => b.text).join('\n');
+  const jsonStr = (text.match(/\{[\s\S]*\}/) || [text])[0];
+  const j = JSON.parse(jsonStr);
+
+  const f = {};
+  f.document_kind = ['passport','emirates_id','uae_residence','generic'].includes(j.document_kind) ? j.document_kind : 'generic';
+  f.doc_type     = j.doc_type || '';
+  f.surname      = j.surname || '';
+  f.given        = j.given || '';
+  f.full_name    = j.full_name || [j.surname, j.given].filter(Boolean).join(' ');
+  f.name         = j.given || j.full_name || '';
+  f.arabic_name  = j.arabic_name || '';
+  f.number       = j.number || '';
+  f.passport_number = f.number;
+  f.nationality  = j.nationality || '';
+  f.sex          = j.sex || '';
+  f.dob          = j.dob || '';
+  f.expiry       = j.expiry || '';
+  f.issue_date   = j.issue_date || '';
+  f.issue_place  = j.issue_place || '';
+  f.place_of_birth = j.place_of_birth || '';
+  f.occupation   = j.occupation || '';
+  f.company_name = j.company_name || '';
+  f.emirates_id  = j.emirates_id || '';
+  f.uid_number   = j.uid_number || '';
+  f.file_number  = j.file_number || '';
+  return { fields: f, raw: JSON.stringify(j, null, 2) };
 }
 
 async function processFile(file){
@@ -1018,6 +1230,22 @@ async function processFile(file){
   try{
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     const canvases = isPdf ? await loadPdfFile(file) : [await loadImageFile(file)];
+
+    // --- high-accuracy AI mode (optional, uses the user's own Anthropic key) ---
+    if (aiEnabled()){
+      try{
+        const proc = card.querySelector('.proc span');
+        if (proc) proc.textContent = 'در حال استخراج دقیق با هوش مصنوعی…';
+        const { fields, raw } = await extractWithClaude(canvases, file.name);
+        renderCard(card, file.name, canvases[0], fields, null, raw);
+        return;
+      }catch(aiErr){
+        toast('حالت هوش مصنوعی ناموفق بود — بازگشت به پردازش داخل مرورگر');
+        const proc = card.querySelector('.proc span');
+        if (proc) proc.textContent = 'در حال استخراج متن…';
+        // fall through to the local Tesseract pipeline below
+      }
+    }
 
     const w = await getWorker();
     const ocrText = await recognizeDocument(w, canvases);
