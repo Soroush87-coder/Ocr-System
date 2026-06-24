@@ -77,6 +77,16 @@ body{
 .brand h1{margin:0;font-family:'Inter',sans-serif;font-weight:800;font-size:27px;letter-spacing:-.5px;color:var(--ink)}
 .brand .tagline{margin:3px 0 0;font-size:14.5px;color:var(--muted)}
 
+/* document-type selector */
+.doctypes{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.dt{
+  font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
+  border:1.5px solid var(--line);background:#fff;color:var(--muted);
+  border-radius:999px;padding:8px 14px;transition:.15s ease;
+}
+.dt:hover{border-color:#c9c8e8;color:var(--ink)}
+.dt.active{background:var(--indigo);border-color:var(--indigo);color:#fff;box-shadow:0 6px 16px -8px rgba(79,70,229,.7)}
+
 /* drop zone */
 .drop{
   position:relative;display:block;
@@ -241,6 +251,13 @@ button.btn:disabled{opacity:.5;cursor:default}
           <h1>Look Studio</h1>
           <p class="tagline">سند را آپلود کنید تا اطلاعاتش استخراج شود</p>
         </div>
+      </div>
+
+      <div class="doctypes" id="doctypes">
+        <button type="button" class="dt active" data-kind="auto">🔎 تشخیص خودکار</button>
+        <button type="button" class="dt" data-kind="passport">📕 پاسپورت</button>
+        <button type="button" class="dt" data-kind="emirates_id">🪪 امارات آیدی</button>
+        <button type="button" class="dt" data-kind="uae_residence">🛂 اقامه / ویزا</button>
       </div>
 
       <label class="drop" id="drop">
@@ -500,8 +517,10 @@ async function loadPdfFile(file){
 function cleanMrzLine(line){
   return line.toUpperCase().replace(/\s+/g,'').replace(/[«»|]/g,'<').replace(/[^A-Z0-9<]/g,'');
 }
-// turn raw OCR text into candidate MRZ lines
-function findMrz(text){
+// turn raw OCR text into candidate MRZ lines.
+// `prefer` ('td1'|'td3') biases which structure we try first when the
+// document type is known up front.
+function findMrz(text, prefer){
   const baseLines = text.split(/\r?\n/).map(cleanMrzLine).filter(Boolean);
   const lines = [];
   for (const line of baseLines){
@@ -524,7 +543,8 @@ function findMrz(text){
   const l30 = mrzish.filter(l=>l.length>=24&&l.length<=34);
 
   // --- TD3 (passport / visa): 2 lines of 44 ---
-  if (l44.length>=2){
+  const tryTD3 = ()=>{
+    if (l44.length<2) return null;
     let best = null;
     for (const a of l44){
       for (const b of l44){
@@ -538,10 +558,12 @@ function findMrz(text){
     if (best && best.score >= 7){
       return {type:'TD3', lines:[norm(best.line1,44), norm(best.line2,44)], valid: best.line2Score >= 10};
     }
-  }
+    return null;
+  };
 
   // --- TD1 (ID card / Emirates ID): 3 lines of 30 ---
-  if (l30.length>=2){
+  const tryTD1 = ()=>{
+    if (l30.length<2) return null;
     // line 2 carries DOB(6)+check+sex(M/F/<)
     let line2 = l30.find(l=>/^\d{6}.[MF<]/.test(l));
     // line 1 starts with doc type + issuing country (often contains ARE)
@@ -550,8 +572,11 @@ function findMrz(text){
     let line3 = l30.find(l=>l!==line1 && l!==line2 && /[A-Z]{2,}<</.test(l));
     if (!line1) line1 = l30.find(l=>l!==line2);
     if (line1 && line2) return {type:'TD1', lines:[norm(line1,30), norm(line2,30), norm(line3||'',30)]};
-  }
-  return null;
+    return null;
+  };
+
+  if (prefer === 'td1') return tryTD1() || tryTD3();
+  return tryTD3() || tryTD1();
 }
 function norm(l,n){ l=l.slice(0,n); while(l.length<n) l+='<'; return l; }
 function fixDigits(s){ return s.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2'); }
@@ -886,13 +911,15 @@ function docTypeFromText(text){
 }
 
 // merge MRZ result + printed-text result into one field set
-function mergeFields(mrz, raw){
+function mergeFields(mrz, raw, hint){
   const m = mrz ? parseMrz(mrz) : {};
   const t = parseLabeled(raw);
   const f = {};
   const eid = findEid(raw);
   const printedType = docTypeFromText(raw);
-  f.doc_type    = printedType || (eid ? 'امارات آیدی' : '') || m.doc_type || '';
+  const HINT_LABEL = {passport:'پاسپورت', emirates_id:'امارات آیدی', uae_residence:'ویزای اقامت امارات'};
+  const forced = hint && hint !== 'auto' ? hint : '';
+  f.doc_type    = (forced && HINT_LABEL[forced]) || printedType || (eid ? 'امارات آیدی' : '') || m.doc_type || '';
   f.surname     = m.surname || t.surname || (t.given && t.name ? t.name : '');
   f.given       = m.given   || t.given   || '';
   const mrzFull = [m.surname, m.given].filter(Boolean).join(' ');
@@ -914,7 +941,7 @@ function mergeFields(mrz, raw){
   f.uid_number = t.uid_number || '';
   f.file_number = t.file_number || '';
   f.emirates_id = eid || cleanFieldValue(t.card_number).replace(/\s+/g,'-');
-  f.document_kind = detectDocumentKind(f, mrz, raw);
+  f.document_kind = forced || detectDocumentKind(f, mrz, raw);
   return f;
 }
 
@@ -1099,14 +1126,17 @@ function mrzLooksValid(mrz){
   catch(_){ return false; }
 }
 
+function mrzPrefer(hint){ return hint === 'emirates_id' ? 'td1' : (hint === 'passport' || hint === 'uae_residence') ? 'td3' : null; }
+
 /* MRZ text: scan crops; if no check-digit-valid MRZ emerges, retry upside down. */
-async function recognizeMrz(w, canvases){
+async function recognizeMrz(w, canvases, hint){
+  const prefer = mrzPrefer(hint);
   const mrzParams = { tessedit_pageseg_mode:'6', preserve_interword_spaces:'1', tessedit_char_whitelist: MRZ_WL };
   const collected = [];
   for (const c of canvases){
     for (const crop of makeMrzCrops(c)) collected.push(await recognizeCanvas(w, crop, mrzParams));
   }
-  if (!mrzLooksValid(findMrz(collected.join('\n')))){
+  if (!mrzLooksValid(findMrz(collected.join('\n'), prefer))){
     for (const c of canvases){
       const r = rotate180(c);
       for (const crop of makeMrzCrops(r)) collected.push(await recognizeCanvas(w, crop, mrzParams));
@@ -1115,9 +1145,9 @@ async function recognizeMrz(w, canvases){
   return collected.join('\n');
 }
 
-async function recognizeDocument(w, canvases){
+async function recognizeDocument(w, canvases, hint){
   const full = await recognizeFullText(w, canvases);
-  const mrz  = await recognizeMrz(w, canvases);
+  const mrz  = await recognizeMrz(w, canvases, hint);
   return [full, mrz]
     .map(t => String(t || '').replace(/[ \t]+\n/g,'\n').trim())
     .filter(Boolean)
@@ -1156,14 +1186,16 @@ function canvasToJpegBase64(canvas, maxSide=1600, quality=0.85){
   return c.toDataURL('image/jpeg', quality).split(',')[1];
 }
 
-async function extractWithClaude(canvases){
+async function extractWithClaude(canvases, hint){
   const key = aiKeyEl.value.trim();
   const imgs = canvases.slice(0,3).map(c => ({
     type:'image',
     source:{ type:'base64', media_type:'image/jpeg', data: canvasToJpegBase64(c) }
   }));
+  const HINT_AI = {passport:'a passport', emirates_id:'a UAE Emirates ID card', uae_residence:'a UAE residence visa / entry permit'};
+  const hintLine = (hint && HINT_AI[hint]) ? `The user states this document is ${HINT_AI[hint]} — read it accordingly.\n` : '';
   const system = 'You are an expert at reading identity and travel documents — passports (including Iranian), UAE Emirates ID, UAE residence visas, and national ID cards in Latin or Arabic script. Transcribe fields exactly as printed; never invent values. Respond with ONLY a JSON object, no markdown fences, no commentary.';
-  const instruction =
+  const instruction = hintLine +
 `Read the document image(s) and return a JSON object with EXACTLY these keys (use "" when a field is truly absent):
 {"document_kind":"passport|emirates_id|uae_residence|generic","doc_type":"short Persian label","full_name":"latin full name","given":"given name(s)","surname":"surname","arabic_name":"name in Arabic script or \\"\\"","number":"passport/document number","nationality":"e.g. IRN (ایران)","sex":"مرد (M)|زن (F)|\\"\\"","dob":"DD/MM/YYYY","expiry":"DD/MM/YYYY","issue_date":"DD/MM/YYYY","issue_place":"","place_of_birth":"","occupation":"","company_name":"sponsor/company/employer","emirates_id":"784-YYYY-NNNNNNN-N or \\"\\"","uid_number":"","file_number":"e.g. 201/2024/..."}
 All dates MUST be DD/MM/YYYY. If a value is printed in both Latin and Arabic, put Latin in its field and the full Arabic name in arabic_name. Output JSON only.`;
@@ -1192,7 +1224,8 @@ All dates MUST be DD/MM/YYYY. If a value is printed in both Latin and Arabic, pu
   const j = JSON.parse(jsonStr);
 
   const f = {};
-  f.document_kind = ['passport','emirates_id','uae_residence','generic'].includes(j.document_kind) ? j.document_kind : 'generic';
+  const forced = hint && hint !== 'auto' ? hint : '';
+  f.document_kind = forced || (['passport','emirates_id','uae_residence','generic'].includes(j.document_kind) ? j.document_kind : 'generic');
   f.doc_type     = j.doc_type || '';
   f.surname      = j.surname || '';
   f.given        = j.given || '';
@@ -1216,6 +1249,29 @@ All dates MUST be DD/MM/YYYY. If a value is printed in both Latin and Arabic, pu
   return { fields: f, raw: JSON.stringify(j, null, 2) };
 }
 
+/* ---------- document-type selector ---------- */
+let docHint = 'auto';
+const DROP_LABEL = {
+  auto:        ['عکس یا PDF را اینجا رها کنید', 'هر مدرکی — نوعش خودکار تشخیص داده می‌شود'],
+  passport:    ['پاسپورت را اینجا رها کنید', 'صفحه‌ی اطلاعات (با ناحیه‌ی MRZ پایین)'],
+  emirates_id: ['امارات آیدی را اینجا رها کنید', 'برای MRZ، پشت کارت را آپلود کنید'],
+  uae_residence:['اقامه / ویزا را اینجا رها کنید', 'تصویر یا PDF اقامت/ورود']
+};
+const docTypesEl = $('#doctypes');
+const dropBigEl = dropEl.querySelector('.big');
+const dropSmallEl = dropEl.querySelector('.small');
+function updateDropLabel(){
+  const [big, small] = DROP_LABEL[docHint] || DROP_LABEL.auto;
+  if (dropBigEl) dropBigEl.textContent = big;
+  if (dropSmallEl) dropSmallEl.textContent = small;
+}
+docTypesEl.addEventListener('click', e=>{
+  const b = e.target.closest('.dt'); if (!b) return;
+  docHint = b.dataset.kind;
+  docTypesEl.querySelectorAll('.dt').forEach(x=>x.classList.toggle('active', x===b));
+  updateDropLabel();
+});
+
 async function processFile(file){
   const card = document.createElement('div');
   card.className = 'card';
@@ -1236,7 +1292,7 @@ async function processFile(file){
       try{
         const proc = card.querySelector('.proc span');
         if (proc) proc.textContent = 'در حال استخراج دقیق با هوش مصنوعی…';
-        const { fields, raw } = await extractWithClaude(canvases, file.name);
+        const { fields, raw } = await extractWithClaude(canvases, docHint);
         renderCard(card, file.name, canvases[0], fields, null, raw);
         return;
       }catch(aiErr){
@@ -1248,15 +1304,15 @@ async function processFile(file){
     }
 
     const w = await getWorker();
-    const ocrText = await recognizeDocument(w, canvases);
+    const ocrText = await recognizeDocument(w, canvases, docHint);
     const raw = [canvases.pdfText || '', ocrText]
       .filter(Boolean)
       .join('\n\n')
       .replace(/[ \t]+\n/g,'\n')
       .trim();
 
-    const mrz = findMrz(raw);
-    const fields = mergeFields(mrz, raw);
+    const mrz = findMrz(raw, mrzPrefer(docHint));
+    const fields = mergeFields(mrz, raw, docHint);
 
     renderCard(card, file.name, canvases[0], fields, mrz, raw);
   }catch(err){
